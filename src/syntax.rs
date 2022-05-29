@@ -21,7 +21,8 @@ mod tests {
     #[test]
     fn test() {
         assert!(parse(&Bump::new(), "val x = 2").is_ok());
-        assert!(parse(&Bump::new(), "val x = (fn x => 2 end) 3").is_ok());
+        assert!(parse(&Bump::new(), "val x = fn x => 2 end 3").is_ok());
         assert!(parse(&Bump::new(), "val x = case x of x => 2 | _ => 3 end").is_ok());
+        assert!(parse(&Bump::new(), "val x = case x of end").is_ok());
     }
 }

@@ -42,26 +42,25 @@ pub Dec: Dec<'a> = {
 }
 
 pub Exp: Exp<'a> = {
-    "case" <exp: Loc<Exp>> "of" <cases: Cases> "end" =>
-        Exp::Case(bump.alloc(exp), cases),
     "let" <dec: Loc<Dec>> "in" <exp: Loc<Exp>> =>
         Exp::Let(bump.alloc(dec), bump.alloc(exp)),
-    "fn" <cases: Cases> "end" => {
-        Exp::Lambda(cases)
-    },
     AppExp
 }
 
 AppExp: Exp<'a> = {
-    <exp1: Loc<AppExp>> <exp2: Loc<LitExp>> =>
+    <exp1: Loc<AppExp>> <exp2: Loc<AtomExp>> =>
         Exp::Apply(bump.alloc(exp1), bump.alloc(exp2)),
-    LitExp
+    AtomExp
 }
 
-LitExp: Exp<'a> = {
+AtomExp: Exp<'a> = {
     IntegerLit => Exp::Integer(<>),
     StringLit => Exp::String(bump.alloc(<>)),
     Id => Exp::Var(bump.alloc(<>)),
+    "fn" <mut cases: Cases> "end" =>
+        Exp::Lambda(bump.alloc_slice_fill_iter(cases.drain(..))),
+    "case" <exp: Loc<Exp>> "of" <mut cases: Cases> "end" =>
+        Exp::Case(bump.alloc(exp), bump.alloc_slice_fill_iter(cases.drain(..))),
     "(" <Exp> ")"
 }
 
@@ -82,22 +81,14 @@ Pats: Vec<'a, Located<Pat<'a>>> = {
     },
 }
 
-Cases: &'a [Case<'a>] = {
-    => {
-        bump.alloc_slice_fill_iter(std::iter::empty())
-    },
-    <mut v: NonemptyCases> => {
-        bump.alloc_slice_fill_iter(v.drain(..))
-    },
-}
-
-NonemptyCases: Vec<'a, Case<'a>> = {
-    "|"? <case: Case> => {
+Cases: Vec<'a, Case<'a>> = {
+    => Vec::new_in(bump),
+    <case: Case> => {
         let mut v = Vec::new_in(bump);
         v.push(case);
         v
     },
-    <mut v: NonemptyCases> "|" <case: Case> => {
+    <mut v: Cases> "|" <case: Case> => {
         v.push(case);
         v
     },
