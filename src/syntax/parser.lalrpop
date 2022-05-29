@@ -1,5 +1,5 @@
-use crate::ast::{Case, Dec, Exp, Pat, Located};
-use crate::lexer::{Error, Token};
+use super::ast::{Case, Dec, Exp, Pat, Located};
+use super::lexer::{Error, Token};
 use bumpalo::{Bump, collections::Vec};
 use lexgen_util::{LexerError, Loc};
 
@@ -46,8 +46,8 @@ pub Exp: Exp<'a> = {
         Exp::Case(bump.alloc(exp), cases),
     "let" <dec: Loc<Dec>> "in" <exp: Loc<Exp>> =>
         Exp::Let(bump.alloc(dec), bump.alloc(exp)),
-    "fn" <pats: Pats> "=>" <exp: Loc<Exp>> => {
-        Exp::Lambda(pats, bump.alloc(exp))
+    "fn" <cases: Cases> "end" => {
+        Exp::Lambda(cases)
     },
     AppExp
 }
@@ -82,13 +82,13 @@ Pats: Vec<'a, Located<Pat<'a>>> = {
     },
 }
 
-Cases: Vec<'a, Case<'a>> = {
-    EmptyCases,
-    NonemptyCases,
-}
-
-EmptyCases: Vec<'a, Case<'a>> = {
-    => Vec::new_in(bump),
+Cases: &'a [Case<'a>] = {
+    => {
+        bump.alloc_slice_fill_iter(std::iter::empty())
+    },
+    <mut v: NonemptyCases> => {
+        bump.alloc_slice_fill_iter(v.drain(..))
+    },
 }
 
 NonemptyCases: Vec<'a, Case<'a>> = {
