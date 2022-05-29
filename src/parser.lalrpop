@@ -1,0 +1,108 @@
+use crate::ast::{Case, Dec, Exp, Pat, Located};
+use crate::lexer::{Error, Token};
+use bumpalo::{Bump, collections::Vec};
+use lexgen_util::{LexerError, Loc};
+
+grammar<'a>(bump: &'a Bump);
+
+extern {
+    type Location = Loc;
+    type Error = LexerError<Error<'a>>;
+
+    enum Token<'a> {
+        "|" => Token::Bar,
+        "=" => Token::Equal,
+        "_" => Token::Underscore,
+        "(" => Token::LParen,
+        ")" => Token::RParen,
+        "=>" => Token::ThickArrow,
+        Id => Token::Var(<&'a str>),
+        IntegerLit => Token::IntegerLit(<&'a str>),
+        StringLit => Token::StringLit(<String>),
+        "case" => Token::CaseKw,
+        "end" => Token::EndKw,
+        "fn" => Token::FnKw,
+        "in" => Token::InKw,
+        "let" => Token::LetKw,
+        "of" => Token::OfKw,
+        "val" => Token::ValKw,
+    }
+}
+
+Loc<X>: Located<X> = {
+    <l: @L> <x: X> <r: @R> => Located {
+        span: (l, r),
+        node: x,
+    }
+}
+
+pub Dec: Dec<'a> = {
+    "val" <pat: Loc<Pat>> "=" <exp: Loc<Exp>> =>
+        Dec::Val(bump.alloc(pat), bump.alloc(exp)),
+}
+
+pub Exp: Exp<'a> = {
+    "case" <exp: Loc<Exp>> "of" <cases: Cases> "end" =>
+        Exp::Case(bump.alloc(exp), cases),
+    "let" <dec: Loc<Dec>> "in" <exp: Loc<Exp>> =>
+        Exp::Let(bump.alloc(dec), bump.alloc(exp)),
+    "fn" <pats: Pats> "=>" <exp: Loc<Exp>> => {
+        Exp::Lambda(pats, bump.alloc(exp))
+    },
+    AppExp
+}
+
+AppExp: Exp<'a> = {
+    <exp1: Loc<AppExp>> <exp2: Loc<LitExp>> =>
+        Exp::Apply(bump.alloc(exp1), bump.alloc(exp2)),
+    LitExp
+}
+
+LitExp: Exp<'a> = {
+    IntegerLit => Exp::Integer(<>),
+    StringLit => Exp::String(bump.alloc(<>)),
+    Id => Exp::Var(bump.alloc(<>)),
+    "(" <Exp> ")"
+}
+
+Pat: Pat<'a> = {
+    "_" => Pat::Wild,
+    Id => Pat::Var(bump.alloc(<>)),
+}
+
+Pats: Vec<'a, Located<Pat<'a>>> = {
+    <pat: Loc<Pat>> => {
+        let mut v = Vec::new_in(bump);
+        v.push(pat);
+        v
+    },
+    <mut v: Pats> <pat: Loc<Pat>> => {
+        v.push(pat);
+        v
+    },
+}
+
+Cases: Vec<'a, Case<'a>> = {
+    EmptyCases,
+    NonemptyCases,
+}
+
+EmptyCases: Vec<'a, Case<'a>> = {
+    => Vec::new_in(bump),
+}
+
+NonemptyCases: Vec<'a, Case<'a>> = {
+    "|"? <case: Case> => {
+        let mut v = Vec::new_in(bump);
+        v.push(case);
+        v
+    },
+    <mut v: NonemptyCases> "|" <case: Case> => {
+        v.push(case);
+        v
+    },
+}
+
+Case: Case<'a> = {
+    <pat: Loc<Pat>> "=>" <exp: Loc<Exp>> => Case { lhs: pat, rhs: exp }
+}
