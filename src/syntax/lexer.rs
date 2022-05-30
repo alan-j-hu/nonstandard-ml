@@ -1,5 +1,4 @@
 use lexgen::lexer;
-use std::mem;
 use std::string::String;
 
 #[derive(Clone, Debug)]
@@ -80,25 +79,25 @@ lexer! {
 
     rule StringLit {
         '"' => |lexer| {
-            let finished = mem::replace(&mut lexer.state().buf, String::new());
+            let finished = std::mem::take(&mut lexer.state().buf);
             lexer.switch_and_return(LexerRule::Init, Token::StringLit(finished))
         },
         '\\' _ =? |lexer| {
             match lexer.match_() {
                 "\\n" => {
-                    lexer.state().buf.push_str("\n");
+                    lexer.state().buf.push('\n');
                     lexer.continue_()
                 },
                 "\\t" => {
-                    lexer.state().buf.push_str("\t");
+                    lexer.state().buf.push('\t');
                     lexer.continue_()
                 },
                 "\\\"" => {
-                    lexer.state().buf.push_str("\"");
+                    lexer.state().buf.push('\"');
                     lexer.continue_()
                 },
                 "\\\'" => {
-                    lexer.state().buf.push_str("\'");
+                    lexer.state().buf.push('\'');
                     lexer.continue_()
                 },
                 s => {
