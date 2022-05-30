@@ -3,82 +3,85 @@ use std::rc::Rc;
 
 #[derive(Clone)]
 enum State {
-    Parent(Rc<RefCell<Type>>),
-    Solved(Expr<Rc<RefCell<Type>>>),
+    Parent(Type),
+    Solved(Expr<Type>),
     Unsolved,
 }
 
 #[derive(Clone)]
-pub struct Type(State);
+pub struct Type {
+    inner: Rc<RefCell<State>>,
+}
 
 impl Type {
     pub fn unsolved() -> Type {
-        Type(State::Unsolved)
-    }
-
-    pub fn solved(e: Expr<Rc<RefCell<Type>>>) -> Type {
-        Type(State::Solved(e))
-    }
-}
-
-pub fn find(ty: Rc<RefCell<Type>>) -> Option<Expr<Rc<RefCell<Type>>>> {
-    loop {
-        let Type(state) = &ty.borrow().clone();
-        match state {
-            State::Parent(ref p) => *ty.borrow_mut() = p.borrow().clone(),
-            State::Solved(ref e) => return Some(e.clone()),
-            State::Unsolved => return None,
+        Type {
+            inner: Rc::new(RefCell::new(State::Unsolved)),
         }
     }
-}
 
-pub fn unify(lhs: Rc<RefCell<Type>>, rhs: Rc<RefCell<Type>>) -> Result<(), Difference> {
-    match (find(lhs.clone()), find(rhs.clone())) {
-        (Some(e1), Some(e2)) => match (e1, e2) {
-            (Expr::Arrow(ty1, ty2), Expr::Arrow(ty3, ty4)) => match unify4(ty1, ty2, ty3, ty4) {
-                None => Ok(()),
-                Some((diff1, diff2)) => Err(Difference(DiffType::Later(Box::new(Expr::Arrow(
-                    diff1, diff2,
-                ))))),
-            },
-            (Expr::Integer, Expr::Integer) => Ok(()),
-            (Expr::Product(tys1), Expr::Product(tys2)) => {
-                if tys1.len() != tys2.len() {
-                    Err(Difference(DiffType::Diff(lhs, rhs)))
-                } else {
-                    match unify_many(tys1.iter(), tys2.iter()) {
-                        Ok(()) => Ok(()),
-                        Err(diffs) => {
-                            Err(Difference(DiffType::Later(Box::new(Expr::Product(diffs)))))
+    pub fn solved(e: Expr<Type>) -> Type {
+        Type {
+            inner: Rc::new(RefCell::new(State::Solved(e))),
+        }
+    }
+
+    pub fn find(self) -> Option<Expr<Type>> {
+        loop {
+            let state = &self.inner.borrow().clone();
+            match state {
+                State::Parent(ref p) => *self.inner.borrow_mut() = p.inner.borrow().clone(),
+                State::Solved(ref e) => return Some(e.clone()),
+                State::Unsolved => return None,
+            }
+        }
+    }
+
+    pub fn unify(self: Type, other: Type) -> Result<(), Difference> {
+        match (self.clone().find(), other.clone().find()) {
+            (Some(e1), Some(e2)) => match (e1, e2) {
+                (Expr::Arrow(ty1, ty2), Expr::Arrow(ty3, ty4)) => {
+                    match unify4(ty1, ty2, ty3, ty4) {
+                        None => Ok(()),
+                        Some((diff1, diff2)) => Err(Difference(DiffType::Later(Box::new(
+                            Expr::Arrow(diff1, diff2),
+                        )))),
+                    }
+                }
+                (Expr::Integer, Expr::Integer) => Ok(()),
+                (Expr::Product(tys1), Expr::Product(tys2)) => {
+                    if tys1.len() != tys2.len() {
+                        Err(Difference(DiffType::Diff(self, other)))
+                    } else {
+                        match unify_many(tys1.iter(), tys2.iter()) {
+                            Ok(()) => Ok(()),
+                            Err(diffs) => {
+                                Err(Difference(DiffType::Later(Box::new(Expr::Product(diffs)))))
+                            }
                         }
                     }
                 }
+                (Expr::String, Expr::String) => Ok(()),
+                (_, _) => Err(Difference(DiffType::Diff(self, other))),
+            },
+            (Some(e), None) => {
+                *other.inner.borrow_mut() = State::Solved(e);
+                Ok(())
             }
-            (Expr::String, Expr::String) => Ok(()),
-            (_, _) => Err(Difference(DiffType::Diff(lhs, rhs))),
-        },
-        (Some(e), None) => {
-            *rhs.borrow_mut() = Type(State::Solved(e));
-            Ok(())
-        }
-        (None, Some(e)) => {
-            *lhs.borrow_mut() = Type(State::Solved(e));
-            Ok(())
-        }
-        (None, None) => {
-            *lhs.borrow_mut() = Type(State::Parent(rhs));
-            Ok(())
+            (None, Some(e)) => {
+                *self.inner.borrow_mut() = State::Solved(e);
+                Ok(())
+            }
+            (None, None) => {
+                *self.inner.borrow_mut() = State::Parent(other);
+                Ok(())
+            }
         }
     }
 }
 
-pub fn unify4(
-    ty1: Rc<RefCell<Type>>,
-    ty2: Rc<RefCell<Type>>,
-    ty3: Rc<RefCell<Type>>,
-    ty4: Rc<RefCell<Type>>,
-) -> Option<(Difference, Difference)> {
-    match (unify(ty1.clone(), ty3), unify(ty2.clone(), ty4)) {
+pub fn unify4(ty1: Type, ty2: Type, ty3: Type, ty4: Type) -> Option<(Difference, Difference)> {
+    match (ty1.clone().unify(ty3), ty2.clone().unify(ty4)) {
         (Ok(()), Ok(())) => None,
         (Ok(()), Err(diff)) => Some((Difference(DiffType::Same(ty1)), diff)),
         (Err(diff), Ok(())) => Some((diff, Difference(DiffType::Same(ty2)))),
@@ -88,20 +91,19 @@ pub fn unify4(
 
 pub fn unify_many<'a, I1, I2>(lhs: I1, rhs: I2) -> Result<(), Vec<Difference>>
 where
-    I1: Iterator<Item = &'a Rc<RefCell<Type>>>,
-    I2: Iterator<Item = &'a Rc<RefCell<Type>>>,
+    I1: Iterator<Item = &'a Type>,
+    I2: Iterator<Item = &'a Type>,
 {
     let diffs: Vec<Difference> = lhs
         .zip(rhs)
-        .map(|(lhs, rhs)| match unify(lhs.clone(), rhs.clone()) {
+        .map(|(lhs, rhs)| match lhs.clone().unify(rhs.clone()) {
             Ok(()) => Difference(DiffType::Same(lhs.clone())),
             Err(diff) => diff,
         })
         .collect();
-    let all_same = diffs.iter().all(|x| match x {
-        Difference(DiffType::Same(_)) => true,
-        _ => false,
-    });
+    let all_same = diffs
+        .iter()
+        .all(|x| matches!(x, Difference(DiffType::Same(_))));
     if all_same {
         Ok(())
     } else {
@@ -120,8 +122,8 @@ pub enum Expr<T> {
 pub struct Difference(DiffType);
 
 enum DiffType {
-    Same(Rc<RefCell<Type>>),
-    Diff(Rc<RefCell<Type>>, Rc<RefCell<Type>>),
+    Same(Type),
+    Diff(Type, Type),
     Later(Box<Expr<Difference>>),
 }
 
@@ -131,39 +133,30 @@ mod tests {
 
     #[test]
     fn unify_unsolved() {
-        let us = Rc::new(RefCell::new(Type::unsolved()));
-        let s_ty = Rc::new(RefCell::new(Type::solved(Expr::String)));
-        assert!(find(us.clone()).is_none());
-        assert!(unify(us.clone(), s_ty.clone()).is_ok());
-        assert!(find(us.clone()).is_some());
+        let us = Type::unsolved();
+        let s_ty = Type::solved(Expr::String);
+        assert!(us.clone().find().is_none());
+        assert!(us.clone().unify(s_ty.clone()).is_ok());
+        assert!(us.clone().find().is_some());
     }
 
     #[test]
     fn unify_product() {
-        let int = Rc::new(RefCell::new(Type::solved(Expr::Integer)));
-        let p1 = Rc::new(RefCell::new(Type::solved(Expr::Product(vec![int.clone()]))));
-        let p2 = Rc::new(RefCell::new(Type::solved(Expr::Product(vec![
-            int.clone(),
-            int.clone(),
-        ]))));
-        assert!(unify(p1.clone(), p1.clone()).is_ok());
-        assert!(unify(p1, p2).is_err());
+        let int = Type::solved(Expr::Integer);
+        let p1 = Type::solved(Expr::Product(vec![int.clone()]));
+        let p2 = Type::solved(Expr::Product(vec![int.clone(), int.clone()]));
+        assert!(p1.clone().unify(p1.clone()).is_ok());
+        assert!(p1.unify(p2).is_err());
     }
 
     #[test]
     fn unify_arrow() {
-        let int = Rc::new(RefCell::new(Type::solved(Expr::Integer)));
-        let us = Rc::new(RefCell::new(Type::unsolved()));
-        let a1 = Rc::new(RefCell::new(Type::solved(Expr::Arrow(
-            int.clone(),
-            int.clone(),
-        ))));
-        let a2 = Rc::new(RefCell::new(Type::solved(Expr::Arrow(
-            int.clone(),
-            us.clone(),
-        ))));
-        assert!(find(us.clone()).is_none());
-        assert!(unify(a1.clone(), a2.clone()).is_ok());
-        assert!(find(us.clone()).is_some());
+        let int = Type::solved(Expr::Integer);
+        let us = Type::unsolved();
+        let a1 = Type::solved(Expr::Arrow(int.clone(), int.clone()));
+        let a2 = Type::solved(Expr::Arrow(int.clone(), us.clone()));
+        assert!(us.clone().find().is_none());
+        assert!(a1.clone().unify(a2.clone()).is_ok());
+        assert!(us.clone().find().is_some());
     }
 }
