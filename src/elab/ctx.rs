@@ -1,8 +1,9 @@
+use super::typ;
 use std::collections::HashMap;
 
 pub struct Ctx<'a> {
     pub parent: Option<&'a Ctx<'a>>,
-    pub values: HashMap<String, ()>,
+    pub values: HashMap<String, typ::Type>,
 }
 
 #[cfg(test)]

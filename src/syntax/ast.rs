@@ -4,6 +4,7 @@ pub struct Located<T> {
 }
 
 pub enum Pat<'a> {
+    Or(&'a Located<Pat<'a>>, &'a Located<Pat<'a>>),
     Var(&'a str),
     Wild,
 }
@@ -24,6 +25,7 @@ pub struct Case<'a> {
 }
 
 pub enum Dec<'a> {
+    And(&'a Located<Dec<'a>>, &'a Located<Dec<'a>>),
     Seq(&'a Located<Dec<'a>>, &'a Located<Dec<'a>>),
     Val(&'a Located<Pat<'a>>, &'a Located<Exp<'a>>),
 }
