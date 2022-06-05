@@ -4,6 +4,7 @@ pub struct Located<T> {
 }
 
 pub enum Pat<'a> {
+    As(&'a str, &'a Located<Pat<'a>>),
     Or(&'a Located<Pat<'a>>, &'a Located<Pat<'a>>),
     Var(&'a str),
     Wild,
