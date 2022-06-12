@@ -27,6 +27,7 @@ pub struct Case<'a> {
 
 pub enum Dec<'a> {
     And(&'a Located<Dec<'a>>, &'a Located<Dec<'a>>),
+    Loc(&'a Located<Dec<'a>>, &'a Located<Dec<'a>>),
     Seq(&'a Located<Dec<'a>>, &'a Located<Dec<'a>>),
     Val(&'a Located<Pat<'a>>, &'a Located<Exp<'a>>),
 }

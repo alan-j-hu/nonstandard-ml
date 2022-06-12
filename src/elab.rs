@@ -14,6 +14,55 @@ pub struct Elaborator {
 }
 
 impl Elaborator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn elab_dec<'a, 'ast, 'typed>(
+        &mut self,
+        bump: &'typed Bump,
+        ctx: &ctx::Ctx<'a, 'ast>,
+        dec: &'ast ast::Located<ast::Dec<'ast>>,
+    ) -> Result<HashMap<&'ast str, typed::Var>, ()> {
+        match dec.node {
+            ast::Dec::And(dec1, dec2) => {
+                let out1 = self.elab_dec(bump, ctx, dec1)?;
+                let mut out2 = self.elab_dec(bump, ctx, dec2)?;
+                for (k, v) in out1.iter() {
+                    match out2.entry(k) {
+                        Entry::Occupied(_) => return Err(()),
+                        Entry::Vacant(va) => {
+                            va.insert(v.clone());
+                        }
+                    }
+                }
+                Ok(out2)
+            }
+            ast::Dec::Loc(dec1, dec2) => {
+                let out1 = self.elab_dec(bump, ctx, dec1)?;
+                self.elab_dec(bump, &ctx.extend(&out1), dec2)
+            }
+            ast::Dec::Seq(dec1, dec2) => {
+                let out1 = self.elab_dec(bump, ctx, dec1)?;
+                let mut out2 = self.elab_dec(bump, &ctx.extend(&out1), dec2)?;
+                for (k, v) in out1.iter() {
+                    match out2.entry(k) {
+                        Entry::Occupied(_) => {}
+                        Entry::Vacant(va) => {
+                            va.insert(v.clone());
+                        }
+                    }
+                }
+                Ok(out2)
+            }
+            ast::Dec::Val(pat, _) => {
+                let mut out = HashMap::new();
+                self.rename_pat(bump, &mut out, pat)?;
+                Ok(out)
+            }
+        }
+    }
+
     pub fn rename_pat<'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
@@ -76,7 +125,7 @@ impl Elaborator {
         pat: &'ast ast::Located<ast::Pat<'ast>>,
     ) -> Result<&'typed mut typed::Pat<'typed>, ()> {
         let pat = self.remap_pat(bump, names, pat)?;
-        for (k, (_, avail)) in names.iter() {
+        for (_k, (_, avail)) in names.iter() {
             if *avail {
                 return Err(());
             }
@@ -171,9 +220,7 @@ mod tests {
         let bump = Bump::new();
         let pat = make_or(&bump, ast::Pat::Var("x"), ast::Pat::Var("x"));
         let mut hm = HashMap::new();
-        assert!(<Elaborator as Default>::default()
-            .rename_pat(&bump, &mut hm, &pat)
-            .is_ok());
+        assert!(Elaborator::new().rename_pat(&bump, &mut hm, &pat).is_ok());
         assert!(hm.contains_key("x"))
     }
 
@@ -182,9 +229,7 @@ mod tests {
         let bump = Bump::new();
         let pat = make_or(&bump, ast::Pat::Var("x"), ast::Pat::Wild);
         let mut hm = HashMap::new();
-        assert!(<Elaborator as Default>::default()
-            .rename_pat(&bump, &mut hm, &pat)
-            .is_err())
+        assert!(Elaborator::new().rename_pat(&bump, &mut hm, &pat).is_err())
     }
 
     #[test]
@@ -192,8 +237,6 @@ mod tests {
         let bump = Bump::new();
         let pat = make_or(&bump, ast::Pat::Wild, ast::Pat::Var("x"));
         let mut hm = HashMap::new();
-        assert!(<Elaborator as Default>::default()
-            .rename_pat(&bump, &mut hm, &pat)
-            .is_err())
+        assert!(Elaborator::new().rename_pat(&bump, &mut hm, &pat).is_err())
     }
 }
