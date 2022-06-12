@@ -26,7 +26,7 @@ impl Type {
         }
     }
 
-    pub fn find(self) -> Option<Expr<Type>> {
+    pub fn find(&self) -> Option<Expr<Type>> {
         loop {
             let state = &self.inner.borrow().clone();
             match state {
@@ -37,8 +37,8 @@ impl Type {
         }
     }
 
-    pub fn unify(self: Type, other: Type) -> Result<(), Difference> {
-        match (self.clone().find(), other.clone().find()) {
+    pub fn unify(self, other: Type) -> Result<(), Difference> {
+        match (self.find(), other.find()) {
             (Some(e1), Some(e2)) => match (e1, e2) {
                 (Expr::Arrow(ty1, ty2), Expr::Arrow(ty3, ty4)) => {
                     match unify4(ty1, ty2, ty3, ty4) {
