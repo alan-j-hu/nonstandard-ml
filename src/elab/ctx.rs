@@ -1,4 +1,4 @@
-use super::typed;
+use super::{typ, typed};
 use std::collections::HashMap;
 
 pub struct Ctx<'a, 'ast: 'a> {
@@ -23,7 +23,7 @@ impl<'a, 'ast> Ctx<'a, 'ast> {
 }
 
 pub struct Scope<'ast> {
-    pub vals: HashMap<&'ast str, typed::Var>,
+    pub vals: HashMap<&'ast str, (typed::Var, typ::Forall)>,
 }
 
 impl<'ast> Scope<'ast> {

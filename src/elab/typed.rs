@@ -4,7 +4,6 @@ use bumpalo::collections::{String, Vec};
 #[derive(Clone)]
 pub struct Var {
     id: usize,
-    pub typ: Type,
 }
 
 #[derive(Default)]
@@ -13,10 +12,10 @@ pub struct VarBuilder {
 }
 
 impl VarBuilder {
-    pub fn fresh(&mut self, typ: Type) -> Var {
+    pub fn fresh(&mut self) -> Var {
         let id = self.counter;
         self.counter = id + 1;
-        Var { id, typ }
+        Var { id }
     }
 }
 
