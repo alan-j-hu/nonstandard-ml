@@ -32,7 +32,7 @@ pub enum PatInner<'a> {
 pub enum Exp<'a> {
     Apply(&'a Exp<'a>, &'a Exp<'a>),
     Case(&'a Exp<'a>, &'a [Case<'a>]),
-    Integer(&'a str),
+    Integer(i64),
     Lambda(&'a [Case<'a>]),
     Let(&'a [Dec<'a>], &'a Exp<'a>),
     String(String<'a>),

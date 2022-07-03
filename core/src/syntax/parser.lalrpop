@@ -17,7 +17,7 @@ extern {
         ")" => Token::RParen,
         "=>" => Token::ThickArrow,
         Id => Token::Var(<&'a str>),
-        IntegerLit => Token::IntegerLit(<&'a str>),
+        IntegerLit => Token::IntegerLit(<i64>),
         StringLit => Token::StringLit(<String>),
         "case" => Token::CaseKw,
         "end" => Token::EndKw,
@@ -34,6 +34,10 @@ Loc<X>: Located<X> = {
         span: (l, r),
         node: x,
     }
+}
+
+pub Program: Located<Dec<'a>> = {
+   <Loc<Dec>>
 }
 
 pub Dec: Dec<'a> = {

@@ -13,7 +13,7 @@ pub enum Pat<'a> {
 pub enum Exp<'a> {
     Apply(&'a Located<Exp<'a>>, &'a Located<Exp<'a>>),
     Case(&'a Located<Exp<'a>>, &'a [Case<'a>]),
-    Integer(&'a str),
+    Integer(i64),
     Lambda(&'a [Case<'a>]),
     Let(&'a Located<Dec<'a>>, &'a Located<Exp<'a>>),
     String(&'a str),

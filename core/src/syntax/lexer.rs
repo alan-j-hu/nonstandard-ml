@@ -12,7 +12,7 @@ pub enum Token<'a> {
     ThickArrow,
     LParen,
     RParen,
-    IntegerLit(&'a str),
+    IntegerLit(i64),
     StringLit(String),
     Var(&'a str),
     CaseKw,
@@ -61,7 +61,7 @@ lexer! {
             lexer.return_(Token::Var(lexer.match_()))
         },
         ['0'-'9']+ => |lexer| {
-            lexer.return_(Token::IntegerLit(lexer.match_()))
+            lexer.return_(Token::IntegerLit(lexer.match_().parse().unwrap()))
         },
         '|' = Token::Bar,
         ',' = Token::Comma,

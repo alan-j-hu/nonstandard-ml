@@ -1,0 +1,9 @@
+[package]
+name = "mlc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bumpalo = { version = "3.9.1", features = ["collections"] }
+clap = { version = "3.2.8", features = ["derive"] }
+nonstandard-ml = { path = "../core" }

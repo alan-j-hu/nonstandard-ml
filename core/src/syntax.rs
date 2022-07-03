@@ -1,17 +1,17 @@
 use lalrpop_util::lalrpop_mod;
+use lalrpop_util::ParseError;
+use lexgen_util::{LexerError, Loc};
 
 pub mod ast;
 pub mod lexer;
 lalrpop_mod!(pub parser, "/syntax/parser.rs");
 
+pub type Error<'a> = ParseError<Loc, lexer::Token<'a>, LexerError<lexer::Error<'a>>>;
+
 #[cfg(test)]
 mod tests {
-    use super::{ast, lexer, parser};
+    use super::{ast, lexer, parser, Error};
     use bumpalo::Bump;
-    use lalrpop_util::ParseError;
-    use lexgen_util::{LexerError, Loc};
-
-    type Error<'a> = ParseError<Loc, lexer::Token<'a>, LexerError<lexer::Error<'a>>>;
 
     fn parse<'a>(bump: &'a Bump, s: &'a str) -> Result<ast::Dec<'a>, Error<'a>> {
         let lexer = lexer::Lexer::new(s);

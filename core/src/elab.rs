@@ -11,16 +11,6 @@ pub mod ctx;
 pub mod typ;
 pub mod typed;
 
-fn generalize<'ast>(
-    mono: &HashMap<&'ast str, (typed::Var, typ::Type)>,
-) -> HashMap<&'ast str, (typed::Var, typ::Forall)> {
-    let mut poly = HashMap::new();
-    for (k, (var, typ)) in mono.iter() {
-        poly.insert(*k, (var.clone(), typ::Forall(typ.clone())));
-    }
-    poly
-}
-
 #[derive(Default)]
 pub struct Elaborator {
     var_builder: typed::VarBuilder,
@@ -54,11 +44,15 @@ impl Elaborator {
                 Ok(out2)
             }
             ast::Dec::Loc(dec1, dec2) => {
+                self.typ_builder.push_level();
                 let out1 = self.elab_dec(bump, out, ctx, dec1)?;
+                self.typ_builder.pop_level();
                 self.elab_dec(bump, out, &ctx.extend(&out1), dec2)
             }
             ast::Dec::Seq(dec1, dec2) => {
+                self.typ_builder.push_level();
                 let out1 = self.elab_dec(bump, out, ctx, dec1)?;
+                self.typ_builder.pop_level();
                 let mut out2 = self.elab_dec(bump, out, &ctx.extend(&out1), dec2)?;
                 for (k, v) in out1.vals.iter() {
                     match out2.vals.entry(k) {
@@ -71,14 +65,12 @@ impl Elaborator {
                 Ok(out2)
             }
             ast::Dec::Val(pat, exp) => {
-                let mut vars = HashMap::new();
+                let mut vals = HashMap::new();
                 let typ = self.typ_builder.unsolved();
-                let pat = self.rename_pat(bump, &mut vars, pat, typ.clone())?;
+                let pat = self.rename_pat(bump, &mut vals, pat, typ.clone())?;
                 let exp = self.elab_exp(bump, ctx, exp, typ)?;
                 out.push(typed::Dec::Val(pat, exp));
-                Ok(ctx::Scope {
-                    vals: generalize(&vars),
-                })
+                Ok(ctx::Scope { vals })
             }
         }
     }
@@ -106,7 +98,12 @@ impl Elaborator {
                 let cases = self.elab_cases(bump, ctx, cases, from, typ)?;
                 Ok(typed::Exp::Case(bump.alloc(exp), cases))
             }
-            ast::Exp::Integer(_) => Err(()),
+            ast::Exp::Integer(n) => {
+                match typ.unify(self.typ_builder.solved(typ::Expr::Integer)) {
+                    Err(_) => Err(()),
+                    Ok(()) => Ok(typed::Exp::Integer(n))
+                }
+            }
             ast::Exp::Lambda(cases) => {
                 let dom = self.typ_builder.unsolved();
                 let codom = self.typ_builder.unsolved();
@@ -121,7 +118,9 @@ impl Elaborator {
             ast::Exp::Let(dec, exp) => {
                 let mut vec = vec![in bump];
                 let scope = self.elab_dec(bump, &mut vec, ctx, dec)?;
+                self.typ_builder.push_level();
                 let exp = self.elab_exp(bump, &ctx.extend(&scope), exp, typ)?;
+                self.typ_builder.pop_level();
                 Ok(typed::Exp::Let(
                     bump.alloc_slice_fill_iter(vec.drain(..)),
                     bump.alloc(exp),
@@ -129,14 +128,16 @@ impl Elaborator {
             }
             ast::Exp::String(s) => {
                 match typ.unify(self.typ_builder.solved(typ::Expr::String)) {
-                    Err(_) => return Err(()),
-                    Ok(()) => {}
+                    Err(_) => Err(()),
+                    Ok(()) => Ok(typed::Exp::String(String::from_str_in(s, bump)))
                 }
-                Ok(typed::Exp::String(String::from_str_in(s, bump)))
             }
             ast::Exp::Var(v) => match ctx.scope.vals.get(v) {
                 None => Err(()),
-                Some((var, _sc)) => Ok(typed::Exp::Var(var.clone())),
+                Some((var, vtyp)) => match typ.unify(self.typ_builder.inst(&vtyp)) {
+                    Ok(()) => Ok(typed::Exp::Var(var.clone())),
+                    Err(_) => Err(()),
+                },
             },
         }
     }
@@ -151,16 +152,9 @@ impl Elaborator {
     ) -> Result<&'typed [typed::Case<'typed>], ()> {
         let mut vec = vec![in bump];
         for ast::Case { lhs, rhs } in cases {
-            let mut vars = HashMap::new();
-            let lhs = self.rename_pat(bump, &mut vars, lhs, from.clone())?;
-            let rhs = self.elab_exp(
-                bump,
-                &ctx.extend(&ctx::Scope {
-                    vals: generalize(&vars),
-                }),
-                rhs,
-                to.clone(),
-            )?;
+            let mut vals = HashMap::new();
+            let lhs = self.rename_pat(bump, &mut vals, lhs, from.clone())?;
+            let rhs = self.elab_exp(bump, &ctx.extend(&ctx::Scope { vals }), rhs, to.clone())?;
             vec.push(typed::Case { lhs, rhs })
         }
         Ok(bump.alloc_slice_fill_iter(vec.drain(..)))

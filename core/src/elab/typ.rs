@@ -2,9 +2,32 @@ use std::cell::RefCell;
 use std::cmp::{Ord, Ordering};
 use std::rc::Rc;
 
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum Level {
+    Nat(i32),
+    Omega,
+}
+
+impl Ord for Level {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Level::Nat(lhs), Level::Nat(rhs)) => lhs.cmp(rhs),
+            (Level::Nat(_), Level::Omega) => Ordering::Less,
+            (Level::Omega, Level::Nat(_)) => Ordering::Greater,
+            (Level::Omega, Level::Omega) => Ordering::Equal,
+        }
+    }
+}
+
+impl PartialOrd for Level {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct Var {
-    level: i32,
+    level: Level,
     id: i32,
     rank: i32,
 }
@@ -66,13 +89,52 @@ impl Builder {
         self.id = id + 1;
         Type::unsolved(Var {
             id,
-            level: self.level,
+            level: Level::Nat(self.level),
             rank: 0,
         })
     }
 
     pub fn solved(&self, e: Expr<Type>) -> Type {
         Type::solved(e)
+    }
+
+    pub fn push_level(&mut self) {
+        self.level += 1
+    }
+
+    pub fn pop_level(&mut self) {
+        self.level -= 1
+    }
+
+    pub fn inst(&mut self, typ: &Type) -> Type {
+        match typ.find() {
+            Repr::Solved(Expr::Arrow(dom, codom)) => {
+                let dom = self.inst(&dom);
+                let codom = self.inst(&codom);
+                match (Rc::strong_count(&dom.inner), Rc::strong_count(&codom.inner)) {
+                    (1, _) | (_, 1) => self.solved(Expr::Arrow(dom, codom)),
+                    (_, _) => typ.clone(),
+                }
+            }
+            Repr::Solved(Expr::Integer) => typ.clone(),
+            Repr::Solved(Expr::Product(typs)) => {
+                let typs: Vec<_> = typs.iter().map(|typ| self.inst(typ)).collect();
+                for typ in &typs {
+                    if Rc::strong_count(&typ.inner) == 1 {
+                        return self.solved(Expr::Product(typs));
+                    }
+                }
+                typ.clone()
+            }
+            Repr::Solved(Expr::String) => typ.clone(),
+            Repr::Unsolved(var) => {
+                if var.level > Level::Nat(self.level) {
+                    self.unsolved()
+                } else {
+                    typ.clone()
+                }
+            }
+        }
     }
 }
 
@@ -210,9 +272,6 @@ pub enum Expr<T> {
     Product(Vec<T>),
     String,
 }
-
-#[derive(Clone)]
-pub struct Forall(pub Type);
 
 pub enum Diff {
     Same(Type),
