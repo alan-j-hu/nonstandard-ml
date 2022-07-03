@@ -34,7 +34,7 @@ pub enum Exp<'a> {
     Case(&'a Exp<'a>, &'a [Case<'a>]),
     Integer(i64),
     Lambda(&'a [Case<'a>]),
-    Let(&'a [Dec<'a>], &'a Exp<'a>),
+    Let(&'a Dec<'a>, &'a Exp<'a>),
     String(String<'a>),
     Var(Var),
 }
@@ -45,5 +45,8 @@ pub struct Case<'a> {
 }
 
 pub enum Dec<'a> {
-    Val(Pat<'a>, Exp<'a>),
+    And(&'a Dec<'a>, &'a Dec<'a>),
+    Loc(&'a Dec<'a>, &'a Dec<'a>),
+    Seq(&'a Dec<'a>, &'a Dec<'a>),
+    Val(&'a Pat<'a>, &'a Exp<'a>),
 }

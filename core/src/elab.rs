@@ -25,52 +25,54 @@ impl Elaborator {
     pub fn elab_dec<'a, 'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
-        out: &mut Vec<'typed, typed::Dec<'typed>>,
         ctx: &ctx::Ctx<'a, 'ast>,
         dec: &'ast ast::Located<ast::Dec<'ast>>,
-    ) -> Result<ctx::Scope<'ast>, ()> {
+    ) -> Result<(ctx::Scope<'ast>, typed::Dec<'typed>), ()> {
         match dec.node {
             ast::Dec::And(dec1, dec2) => {
-                let out1 = self.elab_dec(bump, out, ctx, dec1)?;
-                let mut out2 = self.elab_dec(bump, out, ctx, dec2)?;
-                for (k, v) in out1.vals.iter() {
-                    match out2.vals.entry(k) {
+                let (scope1, dec1) = self.elab_dec(bump, ctx, dec1)?;
+                let (mut scope2, dec2) = self.elab_dec(bump, ctx, dec2)?;
+                for (k, v) in scope1.vals.iter() {
+                    match scope2.vals.entry(k) {
                         Entry::Occupied(_) => return Err(()),
                         Entry::Vacant(va) => {
                             va.insert(v.clone());
                         }
                     }
                 }
-                Ok(out2)
+                Ok((scope2, typed::Dec::And(bump.alloc(dec1), bump.alloc(dec2))))
             }
             ast::Dec::Loc(dec1, dec2) => {
                 self.typ_builder.push_level();
-                let out1 = self.elab_dec(bump, out, ctx, dec1)?;
+                let (scope1, dec1) = self.elab_dec(bump, ctx, dec1)?;
                 self.typ_builder.pop_level();
-                self.elab_dec(bump, out, &ctx.extend(&out1), dec2)
+                let (scope2, dec2) = self.elab_dec(bump, &ctx.extend(&scope1), dec2)?;
+                Ok((scope2, typed::Dec::Loc(bump.alloc(dec1), bump.alloc(dec2))))
             }
             ast::Dec::Seq(dec1, dec2) => {
                 self.typ_builder.push_level();
-                let out1 = self.elab_dec(bump, out, ctx, dec1)?;
+                let (scope1, dec1) = self.elab_dec(bump, ctx, dec1)?;
                 self.typ_builder.pop_level();
-                let mut out2 = self.elab_dec(bump, out, &ctx.extend(&out1), dec2)?;
-                for (k, v) in out1.vals.iter() {
-                    match out2.vals.entry(k) {
+                let (mut scope2, dec2) = self.elab_dec(bump, &ctx.extend(&scope1), dec2)?;
+                for (k, v) in scope1.vals.iter() {
+                    match scope2.vals.entry(k) {
                         Entry::Occupied(_) => {}
                         Entry::Vacant(va) => {
                             va.insert(v.clone());
                         }
                     }
                 }
-                Ok(out2)
+                Ok((scope2, typed::Dec::Seq(bump.alloc(dec1), bump.alloc(dec2))))
             }
             ast::Dec::Val(pat, exp) => {
                 let mut vals = HashMap::new();
                 let typ = self.typ_builder.unsolved();
                 let pat = self.rename_pat(bump, &mut vals, pat, typ.clone())?;
                 let exp = self.elab_exp(bump, ctx, exp, typ)?;
-                out.push(typed::Dec::Val(pat, exp));
-                Ok(ctx::Scope { vals })
+                Ok((
+                    ctx::Scope { vals },
+                    typed::Dec::Val(bump.alloc(pat), bump.alloc(exp)),
+                ))
             }
         }
     }
@@ -98,12 +100,10 @@ impl Elaborator {
                 let cases = self.elab_cases(bump, ctx, cases, from, typ)?;
                 Ok(typed::Exp::Case(bump.alloc(exp), cases))
             }
-            ast::Exp::Integer(n) => {
-                match typ.unify(self.typ_builder.solved(typ::Expr::Integer)) {
-                    Err(_) => Err(()),
-                    Ok(()) => Ok(typed::Exp::Integer(n))
-                }
-            }
+            ast::Exp::Integer(n) => match typ.unify(self.typ_builder.solved(typ::Expr::Integer)) {
+                Err(_) => Err(()),
+                Ok(()) => Ok(typed::Exp::Integer(n)),
+            },
             ast::Exp::Lambda(cases) => {
                 let dom = self.typ_builder.unsolved();
                 let codom = self.typ_builder.unsolved();
@@ -116,22 +116,16 @@ impl Elaborator {
                 Ok(typed::Exp::Lambda(cases))
             }
             ast::Exp::Let(dec, exp) => {
-                let mut vec = vec![in bump];
-                let scope = self.elab_dec(bump, &mut vec, ctx, dec)?;
+                let (scope, dec) = self.elab_dec(bump, ctx, dec)?;
                 self.typ_builder.push_level();
                 let exp = self.elab_exp(bump, &ctx.extend(&scope), exp, typ)?;
                 self.typ_builder.pop_level();
-                Ok(typed::Exp::Let(
-                    bump.alloc_slice_fill_iter(vec.drain(..)),
-                    bump.alloc(exp),
-                ))
+                Ok(typed::Exp::Let(bump.alloc(dec), bump.alloc(exp)))
             }
-            ast::Exp::String(s) => {
-                match typ.unify(self.typ_builder.solved(typ::Expr::String)) {
-                    Err(_) => Err(()),
-                    Ok(()) => Ok(typed::Exp::String(String::from_str_in(s, bump)))
-                }
-            }
+            ast::Exp::String(s) => match typ.unify(self.typ_builder.solved(typ::Expr::String)) {
+                Err(_) => Err(()),
+                Ok(()) => Ok(typed::Exp::String(String::from_str_in(s, bump))),
+            },
             ast::Exp::Var(v) => match ctx.scope.vals.get(v) {
                 None => Err(()),
                 Some((var, vtyp)) => match typ.unify(self.typ_builder.inst(&vtyp)) {

@@ -1,8 +1,8 @@
-use bumpalo::{Bump, collections::Vec, vec};
+use bumpalo::Bump;
 use clap::Parser;
 use nonstandard_ml::{
     diagnostic::Error,
-    elab::{Elaborator, ctx},
+    elab::{ctx, Elaborator},
     syntax::{lexer, parser},
 };
 use std::fs;
@@ -21,11 +21,9 @@ fn compile<'a>(program: &'a str, bump: &'a Bump) -> Result<(), Error<'a>> {
         .map_err(|e| Error::Syntax(e))?;
     let typed = Bump::new();
     let mut elab = Elaborator::new();
-    let mut v = vec!{in &typed};
     let scope = ctx::Scope::new();
     let ctx = ctx::Ctx::new(&scope);
-    let _ = elab.elab_dec(&typed, &mut v, &ctx, &dec)
-        .map_err(|_| Error::Elab)?;
+    let _ = elab.elab_dec(&typed, &ctx, &dec).map_err(|_| Error::Elab)?;
     Ok(())
 }
 
