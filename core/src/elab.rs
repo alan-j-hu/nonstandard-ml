@@ -1,9 +1,5 @@
-use self::typ::Type;
 use super::syntax::ast;
-use bumpalo::{
-    collections::{String, Vec},
-    vec, Bump,
-};
+use bumpalo::{collections::String, vec, Bump};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
@@ -25,9 +21,9 @@ impl Elaborator {
     pub fn elab_dec<'a, 'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
-        ctx: &ctx::Ctx<'a, 'ast>,
+        ctx: &ctx::Ctx<'a, 'ast, 'typed>,
         dec: &'ast ast::Located<ast::Dec<'ast>>,
-    ) -> Result<(ctx::Scope<'ast>, typed::Dec<'typed>), ()> {
+    ) -> Result<(ctx::Scope<'ast, 'typed>, typed::Dec<'typed>), ()> {
         match dec.node {
             ast::Dec::And(dec1, dec2) => {
                 let (scope1, dec1) = self.elab_dec(bump, ctx, dec1)?;
@@ -80,7 +76,7 @@ impl Elaborator {
     pub fn elab_exp<'a, 'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
-        ctx: &ctx::Ctx<'a, 'ast>,
+        ctx: &ctx::Ctx<'a, 'ast, 'typed>,
         exp: &'ast ast::Located<ast::Exp<'ast>>,
         typ: typ::Type,
     ) -> Result<typed::Exp<'typed>, ()> {
@@ -139,7 +135,7 @@ impl Elaborator {
     pub fn elab_cases<'a, 'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
-        ctx: &ctx::Ctx<'a, 'ast>,
+        ctx: &ctx::Ctx<'a, 'ast, 'typed>,
         cases: &'ast [ast::Case<'ast>],
         from: typ::Type,
         to: typ::Type,
@@ -157,7 +153,7 @@ impl Elaborator {
     pub fn rename_pat<'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
-        out: &mut HashMap<&'ast str, (typed::Var, typ::Type)>,
+        out: &mut HashMap<&'ast str, (typed::Var<'typed>, typ::Type)>,
         pat: &'ast ast::Located<ast::Pat<'ast>>,
         typ: typ::Type,
     ) -> Result<typed::Pat<'typed>, ()> {
@@ -167,7 +163,7 @@ impl Elaborator {
                 match out.entry(name) {
                     Entry::Occupied(_) => Err(()),
                     Entry::Vacant(va) => {
-                        let var = self.var_builder.fresh();
+                        let var = self.var_builder.fresh(bump.alloc_str(name));
                         va.insert((var.clone(), typ));
                         pat.vars.push(var);
                         Ok(pat)
@@ -198,7 +194,7 @@ impl Elaborator {
             ast::Pat::Var(name) => match out.entry(name) {
                 Entry::Occupied(_) => Err(()),
                 Entry::Vacant(va) => {
-                    let var = self.var_builder.fresh();
+                    let var = self.var_builder.fresh(bump.alloc_str(name));
                     va.insert((var.clone(), typ));
                     Ok(typed::Pat {
                         inner: typed::PatInner::Wild,
@@ -216,7 +212,7 @@ impl Elaborator {
     fn check_names_same<'ast, 'typed>(
         &self,
         bump: &'typed Bump,
-        names: &mut HashMap<&'ast str, (typed::Var, typ::Type, bool)>,
+        names: &mut HashMap<&'ast str, (typed::Var<'typed>, typ::Type, bool)>,
         pat: &'ast ast::Located<ast::Pat<'ast>>,
         typ: typ::Type,
     ) -> Result<typed::Pat<'typed>, ()> {
@@ -232,7 +228,7 @@ impl Elaborator {
     fn remap_pat<'ast, 'typed>(
         &self,
         bump: &'typed Bump,
-        names: &mut HashMap<&'ast str, (typed::Var, typ::Type, bool)>,
+        names: &mut HashMap<&'ast str, (typed::Var<'typed>, typ::Type, bool)>,
         pat: &'ast ast::Located<ast::Pat<'ast>>,
         typ: typ::Type,
     ) -> Result<typed::Pat<'typed>, ()> {

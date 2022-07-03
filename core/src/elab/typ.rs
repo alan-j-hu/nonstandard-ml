@@ -297,10 +297,10 @@ mod tests {
 
     #[test]
     fn unify_product() {
-        let mut builder = Builder::default();
+        let builder = Builder::default();
         let int = builder.solved(Expr::Integer);
         let p1 = builder.solved(Expr::Product(vec![int.clone()]));
-        let p2 = builder.solved(Expr::Product(vec![int.clone(), int.clone()]));
+        let p2 = builder.solved(Expr::Product(vec![int.clone(), int]));
         assert!(p1.clone().unify(p1.clone()).is_ok());
         assert!(p1.unify(p2).is_err());
     }
@@ -340,7 +340,6 @@ mod tests {
     #[test]
     fn occurs_refl() {
         let mut builder = Builder::default();
-        let int = builder.solved(Expr::Integer);
         let us = builder.unsolved();
         assert!(matches!(us.clone().find(), Repr::Unsolved(_)));
         assert!(us.clone().unify(us.clone()).is_ok());

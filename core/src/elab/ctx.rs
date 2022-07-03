@@ -1,20 +1,20 @@
 use super::{typ, typed};
 use std::collections::HashMap;
 
-pub struct Ctx<'a, 'ast: 'a> {
-    pub parent: Option<&'a Ctx<'a, 'ast>>,
-    pub scope: &'a Scope<'ast>,
+pub struct Ctx<'a, 'ast: 'a, 'typed> {
+    pub parent: Option<&'a Ctx<'a, 'ast, 'typed>>,
+    pub scope: &'a Scope<'ast, 'typed>,
 }
 
-impl<'a, 'ast> Ctx<'a, 'ast> {
-    pub fn new(scope: &'a Scope<'ast>) -> Self {
+impl<'a, 'ast, 'typed> Ctx<'a, 'ast, 'typed> {
+    pub fn new(scope: &'a Scope<'ast, 'typed>) -> Self {
         Self {
             parent: None,
             scope,
         }
     }
 
-    pub fn extend(&'a self, scope: &'a Scope<'ast>) -> Ctx<'a, 'ast> {
+    pub fn extend(&'a self, scope: &'a Scope<'ast, 'typed>) -> Self {
         Ctx {
             parent: Some(self),
             scope,
@@ -22,11 +22,11 @@ impl<'a, 'ast> Ctx<'a, 'ast> {
     }
 }
 
-pub struct Scope<'ast> {
-    pub vals: HashMap<&'ast str, (typed::Var, typ::Type)>,
+pub struct Scope<'ast, 'typed> {
+    pub vals: HashMap<&'ast str, (typed::Var<'typed>, typ::Type)>,
 }
 
-impl<'ast> Scope<'ast> {
+impl<'ast, 'typed> Scope<'ast, 'typed> {
     pub fn new() -> Self {
         Self {
             vals: HashMap::new(),
@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn test() {
-        fn f<'a, 'ast>(n: isize, parent: &'a Ctx<'a, 'ast>) {
+        fn f<'a, 'ast, 'typed>(n: isize, parent: &'a Ctx<'a, 'ast, 'typed>) {
             let ctx = Ctx {
                 parent: Some(parent),
                 scope: &Scope::new(),

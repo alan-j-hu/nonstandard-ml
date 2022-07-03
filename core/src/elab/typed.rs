@@ -2,8 +2,9 @@ use super::typ::Type;
 use bumpalo::collections::{String, Vec};
 
 #[derive(Clone)]
-pub struct Var {
+pub struct Var<'a> {
     id: usize,
+    name: &'a str,
 }
 
 #[derive(Default)]
@@ -12,16 +13,16 @@ pub struct VarBuilder {
 }
 
 impl VarBuilder {
-    pub fn fresh(&mut self) -> Var {
+    pub fn fresh<'a>(&mut self, name: &'a str) -> Var<'a> {
         let id = self.counter;
         self.counter = id + 1;
-        Var { id }
+        Var { id, name }
     }
 }
 
 pub struct Pat<'a> {
     pub inner: PatInner<'a>,
-    pub vars: Vec<'a, Var>,
+    pub vars: Vec<'a, Var<'a>>,
 }
 
 pub enum PatInner<'a> {
@@ -36,7 +37,7 @@ pub enum Exp<'a> {
     Lambda(&'a [Case<'a>]),
     Let(&'a Dec<'a>, &'a Exp<'a>),
     String(String<'a>),
-    Var(Var),
+    Var(Var<'a>),
 }
 
 pub struct Case<'a> {
