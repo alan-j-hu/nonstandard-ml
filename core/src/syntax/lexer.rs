@@ -34,6 +34,7 @@ impl Default for State {
     }
 }
 
+#[derive(Debug)]
 pub enum Error<'a> {
     UnknownEscape(&'a str),
 }
