@@ -26,15 +26,16 @@ pub struct Pat<'a> {
 }
 
 pub enum PatInner<'a> {
+    Int(i64),
     Or(&'a Pat<'a>, &'a Pat<'a>),
     Wild,
 }
 
 pub enum Exp<'a> {
     Apply(&'a Exp<'a>, &'a Exp<'a>),
-    Case(&'a Exp<'a>, &'a [Case<'a>]),
+    Case(Type, &'a Exp<'a>, &'a [Case<'a>]),
     Integer(i64),
-    Lambda(&'a [Case<'a>]),
+    Lambda(Type, &'a [Case<'a>]),
     Let(&'a Dec<'a>, &'a Exp<'a>),
     String(String<'a>),
     Var(Var<'a>),

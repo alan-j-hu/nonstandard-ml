@@ -93,8 +93,8 @@ impl Elaborator {
             ast::Exp::Case(exp, cases) => {
                 let from = self.typ_builder.unsolved();
                 let exp = self.elab_exp(bump, ctx, exp, from.clone())?;
-                let cases = self.elab_cases(bump, ctx, cases, from, typ)?;
-                Ok(typed::Exp::Case(bump.alloc(exp), cases))
+                let cases = self.elab_cases(bump, ctx, cases, from.clone(), typ)?;
+                Ok(typed::Exp::Case(from, bump.alloc(exp), cases))
             }
             ast::Exp::Integer(n) => match typ.unify(self.typ_builder.solved(typ::Expr::Integer)) {
                 Err(_) => Err(()),
@@ -108,8 +108,8 @@ impl Elaborator {
                     Ok(()) => {}
                     Err(_) => return Err(()),
                 }
-                let cases = self.elab_cases(bump, ctx, cases, dom, codom)?;
-                Ok(typed::Exp::Lambda(cases))
+                let cases = self.elab_cases(bump, ctx, cases, dom.clone(), codom)?;
+                Ok(typed::Exp::Lambda(dom, cases))
             }
             ast::Exp::Let(dec, exp) => {
                 let (scope, dec) = self.elab_dec(bump, ctx, dec)?;
