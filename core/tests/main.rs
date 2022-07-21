@@ -67,3 +67,5 @@ macro_rules! run_pass {
 syntax_fail!(fail1, "tests/syntax-fail/syn1.nml");
 typing_fail!(typ1, "tests/typing-fail/typ1.nml");
 run_pass!(pass1, "tests/pass/pass1.nml");
+run_pass!(curry1, "tests/pass/curry1.nml");
+run_pass!(curry2, "tests/pass/curry2.nml");

@@ -5,7 +5,7 @@ use crate::elab::{
 };
 use bumpalo::{vec, Bump};
 use std::collections::VecDeque;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry, BTreeMap, HashMap};
 
 pub struct Compiler<'typed, 'cps> {
     builder: Builder,
@@ -32,14 +32,10 @@ fn find_irrefutable<'typed>(clause: &Clause<'typed>) -> Option<usize> {
     None
 }
 
-fn find_nums<'typed>(
-    out: &mut HashMap<i64, std::vec::Vec<Clause<'typed>>>,
-    bump: &'typed Bump,
-    pat: &'typed Pat<'typed>,
-) {
+fn find_nums<'typed>(out: &mut HashMap<i64, ()>, bump: &'typed Bump, pat: &'typed Pat<'typed>) {
     match pat.inner {
         PatInner::Int(n) => {
-            out.insert(n, std::vec::Vec::new());
+            out.insert(n, ());
         }
         PatInner::Or(pat1, pat2) => {
             find_nums(out, bump, pat1);
@@ -157,13 +153,34 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                             find_nums(&mut map, &mut self.typed_bump, &clause.lhs[idx]);
                         }
                         let worklist = VecDeque::from_iter(matrix.iter().cloned());
-                        for (k, v) in map.iter_mut() {
-                            v.clear();
-                            let matrix = self.specialize_int(idx, *k, worklist.clone());
-                            *v = matrix;
+                        let mut conts = vec![in self.cps_bump];
+                        let mut new_scruts = Vec::with_capacity_in(conts.len() - 1, self.cps_bump);
+                        for (i, scrut) in scruts.iter().enumerate() {
+                            if i != idx {
+                                new_scruts.push(scrut.clone());
+                            }
                         }
-                        let _default = self.default(idx, worklist);
-                        Err(())
+                        let mut bmap = BTreeMap::new();
+                        for (n, ()) in map.iter_mut() {
+                            let id = self.builder.fresh_id();
+                            let matrix = self.specialize_int(idx, *n, worklist.clone());
+                            let body = self.compile_pats(&new_scruts, matrix)?;
+                            conts.push((id, vec![in self.cps_bump], &*self.cps_bump.alloc(body)));
+                            bmap.insert(*n, id);
+                        }
+                        let default_id = self.builder.fresh_id();
+                        let default = self.default(idx, worklist);
+                        let body = self.compile_pats(&new_scruts, default)?;
+                        conts.push((
+                            default_id,
+                            vec![in self.cps_bump],
+                            &*self.cps_bump.alloc(body),
+                        ));
+                        Ok(CExp::LetCont(
+                            conts,
+                            self.cps_bump
+                                .alloc(CExp::CaseInt(scruts[idx].0, bmap, default_id)),
+                        ))
                     }
                     typ::Repr::Solved(typ::Expr::Product(_)) => Err(()),
                     typ::Repr::Solved(typ::Expr::String) => Err(()),
