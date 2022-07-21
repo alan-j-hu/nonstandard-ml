@@ -99,5 +99,8 @@ Cases: Vec<'a, Case<'a>> = {
 }
 
 Case: Case<'a> = {
-    <pat: Loc<Pat>> "=>" <exp: Loc<Exp>> => Case { lhs: pat, rhs: exp }
+    <mut pats: Pats> "=>" <exp: Loc<Exp>> => Case {
+        lhs: bump.alloc_slice_fill_iter(pats.drain(..)),
+        rhs: exp
+    }
 }

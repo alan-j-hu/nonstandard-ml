@@ -16,7 +16,7 @@ pub struct Compiler<'typed, 'cps> {
 
 #[derive(Clone)]
 pub struct Clause<'typed> {
-    lhs: Vec<'typed, &'typed Pat<'typed>>,
+    lhs: std::vec::Vec<&'typed Pat<'typed>>,
     rhs: Id,
     vars: HashMap<Var<'typed>, ()>,
 }
@@ -33,13 +33,13 @@ fn find_irrefutable<'typed>(clause: &Clause<'typed>) -> Option<usize> {
 }
 
 fn find_nums<'typed>(
-    out: &mut HashMap<i64, Vec<'typed, Clause<'typed>>>,
+    out: &mut HashMap<i64, std::vec::Vec<Clause<'typed>>>,
     bump: &'typed Bump,
     pat: &'typed Pat<'typed>,
 ) {
     match pat.inner {
         PatInner::Int(n) => {
-            out.insert(n, vec![in bump]);
+            out.insert(n, std::vec::Vec::new());
         }
         PatInner::Or(pat1, pat2) => {
             find_nums(out, bump, pat1);
@@ -54,8 +54,8 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
         &mut self,
         idx: usize,
         mut worklist: VecDeque<Clause<'typed>>,
-    ) -> Vec<'typed, Clause<'typed>> {
-        let mut out = vec![in self.typed_bump];
+    ) -> std::vec::Vec<Clause<'typed>> {
+        let mut out = std::vec::Vec::new();
         while let Some(clause) = worklist.pop_front() {
             match clause.lhs[idx].inner {
                 PatInner::Int(_) => {}
@@ -94,8 +94,8 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
         idx: usize,
         n: i64,
         mut worklist: VecDeque<Clause<'typed>>,
-    ) -> Vec<'typed, Clause<'typed>> {
-        let mut out = vec![in self.typed_bump];
+    ) -> std::vec::Vec<Clause<'typed>> {
+        let mut out = std::vec::Vec::new();
         while let Some(clause) = worklist.pop_front() {
             match clause.lhs[idx].inner {
                 PatInner::Int(m) if m == n => {
@@ -140,15 +140,15 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
 
     pub fn compile_pats(
         &mut self,
-        typ: &typ::Type,
-        matrix: Vec<'typed, Clause<'typed>>,
+        scruts: &[(Id, typ::Type)],
+        matrix: std::vec::Vec<Clause<'typed>>,
     ) -> Result<CExp<'cps>, ()> {
         if matrix.len() == 0 {
             Err(())
         } else {
             match find_irrefutable(&matrix[0]) {
                 None => Ok(CExp::Continue(matrix[0].rhs, vec![in self.cps_bump])),
-                Some(idx) => match typ.find() {
+                Some(idx) => match scruts[idx].1.find() {
                     typ::Repr::Unsolved(_) => Err(()),
                     typ::Repr::Solved(typ::Expr::Arrow(_, _)) => Err(()),
                     typ::Repr::Solved(typ::Expr::Integer) => {
@@ -193,25 +193,27 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
 
     pub fn convert_clauses(
         &mut self,
-        typ: &'typed typ::Type,
+        typs: &[(Id, typ::Type)],
         clauses: &'typed [Case<'typed>],
         cont: Box<dyn Fn(&mut Self, Id) -> Result<CExp<'cps>, ()> + '_>,
     ) -> Result<CExp<'cps>, ()> {
-        let mut matrix = vec![in self.typed_bump];
+        let mut matrix = std::vec::Vec::new();
         let mut rhss = vec![in self.cps_bump];
-        for Case { lhs: pat, rhs } in clauses {
+        for Case { lhs, rhs } in clauses {
             let mut vars = std::vec::Vec::new();
-            self.gather_bindings(pat, &mut vars);
+            for pat in lhs {
+                self.gather_bindings(pat, &mut vars);
+            }
             let id = self.builder.fresh_id();
             matrix.push(Clause {
-                lhs: vec![in self.typed_bump; pat],
+                lhs: lhs.iter().collect(),
                 rhs: id,
                 vars: HashMap::new(),
             });
             let body = self.convert_exp(rhs, Box::new(|comp: &mut Self, exp| cont(comp, exp)));
             rhss.push((id, body, vars))
         }
-        self.compile_pats(typ, matrix)
+        self.compile_pats(typs, matrix)
     }
 
     pub fn convert_exp(
@@ -240,19 +242,21 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     )
                 }),
             ),
-            Exp::Case(ref typ, _, clauses) => {
+            Exp::Case(ref typ, ref scrut, clauses) => {
                 let cont_id = self.builder.fresh_id();
                 let var_id = self.builder.fresh_id();
-                let body = self.convert_clauses(
-                    typ,
-                    clauses,
-                    Box::new(|comp, exp| Ok(CExp::Continue(cont_id, vec![in comp.cps_bump; exp]))),
-                )?;
-                let cont = cont(self, var_id)?;
-                Ok(CExp::LetCont(
-                    vec![in self.cps_bump; (cont_id, vec![in self.cps_bump; var_id], &*self.cps_bump.alloc(cont))],
-                    self.cps_bump.alloc(body),
-                ))
+                self.convert_exp(scrut, Box::new(move |comp, scrut| {
+                    let body = comp.convert_clauses(
+                        &[(scrut, typ.clone())],
+                        clauses,
+                        Box::new(|comp, exp| Ok(CExp::Continue(cont_id, vec![in comp.cps_bump; exp]))),
+                    )?;
+                    let cont = cont(comp, var_id)?;
+                    Ok(CExp::LetCont(
+                        vec![in comp.cps_bump; (cont_id, vec![in comp.cps_bump; var_id], &*comp.cps_bump.alloc(cont))],
+                        comp.cps_bump.alloc(body),
+                    ))
+                }))
             }
             Exp::Integer(n) => {
                 let id = self.builder.fresh_id();
@@ -263,10 +267,14 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                 let cont = cont(self, id)?;
                 Ok(CExp::Let(def, self.cps_bump.alloc(cont)))
             }
-            Exp::Lambda(ref typ, clauses) => {
+            Exp::Lambda(ref dom, clauses) => {
+                let mut scruts = std::vec::Vec::new();
+                for typ in dom {
+                    scruts.push((self.builder.fresh_id(), typ.clone()));
+                }
                 let id = self.builder.fresh_id();
                 self.convert_clauses(
-                    typ,
+                    &scruts,
                     clauses,
                     Box::new(|comp: &mut Self, exp| {
                         Ok(CExp::Continue(id, vec![in comp.cps_bump; exp]))

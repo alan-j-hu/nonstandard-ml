@@ -1,5 +1,8 @@
 use super::syntax::ast;
-use bumpalo::{collections::String, vec, Bump};
+use bumpalo::{
+    collections::{String, Vec},
+    vec, Bump,
+};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
@@ -93,7 +96,7 @@ impl Elaborator {
             ast::Exp::Case(exp, cases) => {
                 let from = self.typ_builder.unsolved();
                 let exp = self.elab_exp(bump, ctx, exp, from.clone())?;
-                let cases = self.elab_cases(bump, ctx, cases, from.clone(), typ)?;
+                let cases = self.elab_cases(bump, ctx, cases, &vec![in bump; from.clone()], typ)?;
                 Ok(typed::Exp::Case(from, bump.alloc(exp), cases))
             }
             ast::Exp::Integer(n) => match typ.unify(self.typ_builder.solved(typ::Expr::Integer)) {
@@ -101,15 +104,27 @@ impl Elaborator {
                 Ok(()) => Ok(typed::Exp::Integer(n)),
             },
             ast::Exp::Lambda(cases) => {
-                let dom = self.typ_builder.unsolved();
-                let codom = self.typ_builder.unsolved();
-                let arr = typ::Expr::Arrow(dom.clone(), codom.clone());
-                match typ.unify(self.typ_builder.solved(arr)) {
-                    Ok(()) => {}
-                    Err(_) => return Err(()),
+                if cases.len() == 0 {
+                    Err(())
+                } else {
+                    let mut dom = Vec::new_in(bump);
+                    for _ in cases[0].lhs {
+                        dom.push(self.typ_builder.unsolved());
+                    }
+                    let codom = self.typ_builder.unsolved();
+                    let mut arr = codom.clone();
+                    for typ in dom.iter().rev() {
+                        arr = self
+                            .typ_builder
+                            .solved(typ::Expr::Arrow(typ.clone(), arr.clone()))
+                    }
+                    match typ.unify(arr) {
+                        Ok(()) => {}
+                        Err(_) => return Err(()),
+                    }
+                    let cases = self.elab_cases(bump, ctx, cases, &dom, codom)?;
+                    Ok(typed::Exp::Lambda(dom, cases))
                 }
-                let cases = self.elab_cases(bump, ctx, cases, dom.clone(), codom)?;
-                Ok(typed::Exp::Lambda(dom, cases))
             }
             ast::Exp::Let(dec, exp) => {
                 let (scope, dec) = self.elab_dec(bump, ctx, dec)?;
@@ -137,15 +152,24 @@ impl Elaborator {
         bump: &'typed Bump,
         ctx: &ctx::Ctx<'a, 'ast, 'typed>,
         cases: &'ast [ast::Case<'ast>],
-        from: typ::Type,
+        from: &Vec<typ::Type>,
         to: typ::Type,
     ) -> Result<&'typed [typed::Case<'typed>], ()> {
         let mut vec = vec![in bump];
         for ast::Case { lhs, rhs } in cases {
             let mut vals = HashMap::new();
-            let lhs = self.rename_pat(bump, &mut vals, lhs, from.clone())?;
-            let rhs = self.elab_exp(bump, &ctx.extend(&ctx::Scope { vals }), rhs, to.clone())?;
-            vec.push(typed::Case { lhs, rhs })
+            if lhs.len() == from.len() {
+                let mut new_lhs = Vec::new_in(bump);
+                for (pat, typ) in lhs.iter().zip(from) {
+                    let pat = self.rename_pat(bump, &mut vals, &pat, typ.clone())?;
+                    new_lhs.push(pat);
+                }
+                let rhs =
+                    self.elab_exp(bump, &ctx.extend(&ctx::Scope { vals }), rhs, to.clone())?;
+                vec.push(typed::Case { lhs: new_lhs, rhs })
+            } else {
+                return Err(());
+            }
         }
         Ok(bump.alloc_slice_fill_iter(vec.drain(..)))
     }

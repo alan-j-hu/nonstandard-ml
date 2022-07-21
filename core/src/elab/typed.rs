@@ -35,14 +35,14 @@ pub enum Exp<'a> {
     Apply(&'a Exp<'a>, &'a Exp<'a>),
     Case(Type, &'a Exp<'a>, &'a [Case<'a>]),
     Integer(i64),
-    Lambda(Type, &'a [Case<'a>]),
+    Lambda(Vec<'a, Type>, &'a [Case<'a>]),
     Let(&'a Dec<'a>, &'a Exp<'a>),
     String(String<'a>),
     Var(Var<'a>),
 }
 
 pub struct Case<'a> {
-    pub lhs: Pat<'a>,
+    pub lhs: Vec<'a, Pat<'a>>,
     pub rhs: Exp<'a>,
 }
 
