@@ -2,7 +2,7 @@ use bumpalo::Bump;
 use clap::Parser;
 use nonstandard_ml::{
     diagnostic::Error,
-    elab::{ctx, Elaborator},
+    elab,
     syntax::{lexer, parser},
 };
 use std::fs;
@@ -20,10 +20,7 @@ fn compile<'a>(program: &'a str, bump: &'a Bump) -> Result<(), Error<'a>> {
         .parse(bump, lexer)
         .map_err(|e| Error::Syntax(e))?;
     let typed = Bump::new();
-    let mut elab = Elaborator::new();
-    let scope = ctx::Scope::new();
-    let ctx = ctx::Ctx::new(&scope);
-    let _ = elab.elab_dec(&typed, &ctx, &dec).map_err(|_| Error::Elab)?;
+    let _ = elab::elab(&typed, &dec).map_err(|_| Error::Elab)?;
     Ok(())
 }
 

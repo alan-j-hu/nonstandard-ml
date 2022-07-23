@@ -3,20 +3,35 @@ use crate::elab::{
     typ,
     typed::{Case, Dec, Exp, Pat, PatInner, Var},
 };
-use bumpalo::{vec, Bump};
+use bumpalo::{collections::String, vec, Bump};
 use std::collections::VecDeque;
 use std::collections::{hash_map::Entry, BTreeMap, HashMap};
 use std::rc::Rc;
 
-pub struct Compiler<'typed, 'cps> {
+pub fn convert<'typed, 'cps>(
+    typed_bump: &'typed Bump,
+    cps_bump: &'cps Bump,
+    dec: &'typed Dec<'typed>,
+) -> Result<CExp<'cps>, ()> {
+    let mut compiler = Compiler {
+        builder: Builder::new(),
+        typed_bump,
+        cps_bump,
+        vars: HashMap::new(),
+    };
+    let id = compiler.builder.fresh_id();
+    compiler.convert_dec(dec, id)
+}
+
+struct Compiler<'typed, 'cps> {
     builder: Builder,
     typed_bump: &'typed Bump,
     cps_bump: &'cps Bump,
-    map: HashMap<Var<'typed>, Id>,
+    vars: HashMap<Var<'typed>, Id>,
 }
 
 #[derive(Clone)]
-pub struct Clause<'typed> {
+struct Clause<'typed> {
     lhs: std::vec::Vec<&'typed Pat<'typed>>,
     rhs: Id,
     vars: HashMap<Var<'typed>, Id>,
@@ -63,7 +78,7 @@ fn remove_pat<'typed>(clause: Clause<'typed>, idx: usize, scrut: Id) -> Clause<'
 }
 
 impl<'typed, 'cps> Compiler<'typed, 'cps> {
-    pub fn convert_dec(&mut self, dec: &'typed Dec<'typed>, cont_id: Id) -> Result<CExp<'cps>, ()> {
+    fn convert_dec(&mut self, dec: &'typed Dec<'typed>, cont_id: Id) -> Result<CExp<'cps>, ()> {
         match dec {
             Dec::And(dec1, dec2) | Dec::Loc(dec1, dec2) | Dec::Seq(dec1, dec2) => {
                 let id = self.builder.fresh_id();
@@ -159,9 +174,26 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     }),
                 )
             }
-            Exp::Let(_, _) => unimplemented!(),
-            Exp::String(_) => unimplemented!(),
-            Exp::Var(_) => unimplemented!(),
+            Exp::Let(dec, exp) => {
+                let id = self.builder.fresh_id();
+                let dec = self.convert_dec(dec, id)?;
+                let exp = self.convert_exp(exp, cont)?;
+                Ok(CExp::LetCont(
+                    vec![in self.cps_bump; (id, vec![in self.cps_bump], &*self.cps_bump.alloc(exp))],
+                    &*self.cps_bump.alloc(dec),
+                ))
+            }
+            Exp::String(ref s) => {
+                let id = self.builder.fresh_id();
+                Ok(CExp::Let(
+                    &*self.cps_bump.alloc(ADef {
+                        id,
+                        exp: AExp::String(String::from_str_in(s, self.cps_bump)),
+                    }),
+                    &*self.cps_bump.alloc(cont(self, id)?),
+                ))
+            }
+            Exp::Var(ref v) => cont(self, *self.vars.get(v).unwrap()),
         }
     }
 
@@ -212,9 +244,9 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     matrix.truncate(1);
                     let Clause {
                         lhs,
+                        rhs,
                         mut vars,
                         params,
-                        ..
                     } = matrix.remove(0);
                     for (pat, (scrut, _)) in lhs.iter().zip(scruts) {
                         for var in &pat.vars {
@@ -225,7 +257,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     for (param, _) in params.iter() {
                         args.push(vars.get(param).unwrap().clone());
                     }
-                    Ok(CExp::Continue(matrix[0].rhs, args))
+                    Ok(CExp::Continue(rhs, args))
                 }
                 Some(idx) => match scruts[idx].1.find() {
                     typ::Repr::Unsolved(_) => Err(()),
@@ -280,12 +312,13 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
     ) {
         loop {
             for var in &pat.vars {
-                vec.push((var.clone(), self.builder.fresh_id()));
+                let id = self.builder.fresh_id();
+                self.vars.insert(var.clone(), id);
+                vec.push((var.clone(), id))
             }
             match pat.inner {
-                PatInner::Or(pat1, pat2) => {
-                    self.gather_bindings(pat1, vec);
-                    pat = pat2;
+                PatInner::Or(pat1, _) => {
+                    pat = pat1;
                 }
                 PatInner::Int(_) | PatInner::Wild => return,
             }

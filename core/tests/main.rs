@@ -1,7 +1,8 @@
 use bumpalo::Bump;
 use nonstandard_ml::{
+    cps,
     diagnostic::Error,
-    elab::{ctx, Elaborator},
+    elab,
     syntax::{lexer, parser},
 };
 use std::fs;
@@ -19,10 +20,7 @@ fn test_typecheck_fail(y: &str) {
     let bump = Bump::new();
     let dec = parser::ProgramParser::new().parse(&bump, lexer).unwrap();
     let typed = Bump::new();
-    let mut elab = Elaborator::new();
-    let scope = ctx::Scope::new();
-    let ctx = ctx::Ctx::new(&scope);
-    assert!(elab.elab_dec(&typed, &ctx, &dec).is_err())
+    assert!(elab::elab(&typed, &dec).is_err())
 }
 
 fn test_pass(y: &str) {
@@ -31,10 +29,9 @@ fn test_pass(y: &str) {
     let bump = Bump::new();
     let dec = parser::ProgramParser::new().parse(&bump, lexer).unwrap();
     let typed = Bump::new();
-    let mut elab = Elaborator::new();
-    let scope = ctx::Scope::new();
-    let ctx = ctx::Ctx::new(&scope);
-    elab.elab_dec(&typed, &ctx, &dec).unwrap();
+    let (_, dec) = elab::elab(&typed, &dec).unwrap();
+    let cps = Bump::new();
+    cps::convert::convert(&typed, &cps, &dec).unwrap();
 }
 
 macro_rules! syntax_fail {

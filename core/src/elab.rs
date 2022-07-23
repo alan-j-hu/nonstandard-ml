@@ -10,6 +10,16 @@ pub mod ctx;
 pub mod typ;
 pub mod typed;
 
+pub fn elab<'ast, 'typed>(
+    bump: &'typed Bump,
+    dec: &'ast ast::Located<ast::Dec<'ast>>,
+) -> Result<(ctx::Scope<'ast, 'typed>, typed::Dec<'typed>), ()> {
+    let mut elab = Elaborator::new();
+    let scope = ctx::Scope::new();
+    let ctx = ctx::Ctx::new(&scope);
+    elab.elab_dec(&bump, &ctx, &dec)
+}
+
 #[derive(Default)]
 pub struct Elaborator {
     var_builder: typed::VarBuilder,
@@ -17,11 +27,11 @@ pub struct Elaborator {
 }
 
 impl Elaborator {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self::default()
     }
 
-    pub fn elab_dec<'a, 'ast, 'typed>(
+    fn elab_dec<'a, 'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
         ctx: &ctx::Ctx<'a, 'ast, 'typed>,
@@ -76,7 +86,7 @@ impl Elaborator {
         }
     }
 
-    pub fn elab_exp<'a, 'ast, 'typed>(
+    fn elab_exp<'a, 'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
         ctx: &ctx::Ctx<'a, 'ast, 'typed>,
@@ -147,7 +157,7 @@ impl Elaborator {
         }
     }
 
-    pub fn elab_cases<'a, 'ast, 'typed>(
+    fn elab_cases<'a, 'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
         ctx: &ctx::Ctx<'a, 'ast, 'typed>,
@@ -174,7 +184,7 @@ impl Elaborator {
         Ok(bump.alloc_slice_fill_iter(vec.drain(..)))
     }
 
-    pub fn rename_pat<'ast, 'typed>(
+    fn rename_pat<'ast, 'typed>(
         &mut self,
         bump: &'typed Bump,
         out: &mut HashMap<&'ast str, (typed::Var<'typed>, typ::Type)>,
