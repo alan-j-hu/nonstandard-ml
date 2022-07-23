@@ -67,10 +67,10 @@ impl Elaborator {
                 let mut vals = HashMap::new();
                 let typ = self.typ_builder.unsolved();
                 let pat = self.rename_pat(bump, &mut vals, pat, typ.clone())?;
-                let exp = self.elab_exp(bump, ctx, exp, typ)?;
+                let exp = self.elab_exp(bump, ctx, exp, typ.clone())?;
                 Ok((
                     ctx::Scope { vals },
-                    typed::Dec::Val(bump.alloc(pat), bump.alloc(exp)),
+                    typed::Dec::Val(typ, bump.alloc(pat), bump.alloc(exp)),
                 ))
             }
         }

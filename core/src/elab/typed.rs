@@ -1,10 +1,22 @@
 use super::typ::Type;
 use bumpalo::collections::{String, Vec};
 
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub struct Var<'a> {
     id: usize,
     name: &'a str,
+}
+
+impl<'a> PartialEq for Var<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<'a> std::hash::Hash for Var<'a> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state)
+    }
 }
 
 #[derive(Default)]
@@ -50,5 +62,5 @@ pub enum Dec<'a> {
     And(&'a Dec<'a>, &'a Dec<'a>),
     Loc(&'a Dec<'a>, &'a Dec<'a>),
     Seq(&'a Dec<'a>, &'a Dec<'a>),
-    Val(&'a Pat<'a>, &'a Exp<'a>),
+    Val(Type, &'a Pat<'a>, &'a Exp<'a>),
 }
