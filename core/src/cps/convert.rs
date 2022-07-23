@@ -172,24 +172,31 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
         cont: Box<dyn Fn(&mut Self, Id) -> Result<CExp<'cps>, ()> + '_>,
     ) -> Result<CExp<'cps>, ()> {
         let mut matrix = std::vec::Vec::new();
-        let mut rhss = vec![in self.cps_bump];
+        let mut rhss = Vec::new_in(self.cps_bump);
         for Case { lhs, rhs } in clauses {
             let mut params = std::vec::Vec::new();
             for pat in lhs {
                 self.gather_bindings(pat, &mut params);
             }
             let id = self.builder.fresh_id();
-            let rc = Rc::new(params);
+            let body = self.convert_exp(rhs, Box::new(|comp: &mut Self, exp| cont(comp, exp)))?;
+            let mut v: Vec<Id> = Vec::new_in(self.cps_bump);
+            for (_, id) in &params {
+                v.push(*id)
+            }
+            rhss.push((id, v, &*self.cps_bump.alloc(body)));
+            let params = Rc::new(params);
             matrix.push(Clause {
                 lhs: lhs.iter().collect(),
                 rhs: id,
                 vars: HashMap::new(),
-                params: rc.clone(),
+                params: params,
             });
-            let body = self.convert_exp(rhs, Box::new(|comp: &mut Self, exp| cont(comp, exp)));
-            rhss.push((id, body, rc))
         }
-        self.compile_pats(typs, matrix)
+        Ok(CExp::LetCont(
+            rhss,
+            &*self.cps_bump.alloc(self.compile_pats(typs, matrix)?),
+        ))
     }
 
     fn compile_pats(
