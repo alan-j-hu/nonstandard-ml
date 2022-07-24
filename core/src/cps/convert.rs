@@ -109,30 +109,27 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
         }
     }
 
-    pub fn convert_exp(
+    fn convert_exp(
         &mut self,
         exp: &'typed Exp<'typed>,
         cont: Box<dyn FnOnce(&mut Self, Id) -> Result<CExp<'cps>, ()> + '_>,
     ) -> Result<CExp<'cps>, ()> {
         match *exp {
             Exp::Apply(exp1, exp2) => self.convert_exp(
-                exp1,
-                Box::new(move |comp, exp1| {
-                    comp.convert_exp(
-                        exp2,
-                        Box::new(move |comp, exp2| {
-                            let cont_id = comp.builder.fresh_id();
-                            let param_id = comp.builder.fresh_id();
-                            let cont = cont(comp, param_id)?;
-                            Ok(CExp::LetCont(
-                                vec![in comp.cps_bump;
-                                     (cont_id,
-                                      vec![in comp.cps_bump; param_id],
-                                      &*comp.cps_bump.alloc(cont))],
-                                comp.cps_bump.alloc(CExp::Apply(exp1, exp2, cont_id)),
-                            ))
-                        }),
-                    )
+                exp2,
+                Box::new(move |comp, exp2| {
+                    let cont_id = comp.builder.fresh_id();
+                    let param_id = comp.builder.fresh_id();
+                    let exp1 = comp.convert_exp(exp1, Box::new(move |_, _| Ok(CExp::Enter)))?;
+                    let cont = cont(comp, param_id)?;
+                    Ok(CExp::LetCont(
+                        vec![in comp.cps_bump;
+                             (cont_id,
+                              vec![in comp.cps_bump; param_id],
+                              &*comp.cps_bump.alloc(cont))],
+                        comp.cps_bump
+                            .alloc(CExp::Apply(comp.cps_bump.alloc(exp1), exp2)),
+                    ))
                 }),
             ),
             Exp::Case(ref typ, ref scrut, clauses) => {
@@ -165,14 +162,30 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                 for typ in dom {
                     scruts.push((self.builder.fresh_id(), typ.clone()));
                 }
-                let id = self.builder.fresh_id();
-                self.convert_clauses(
+                let ret_addr = self.builder.fresh_id();
+                let body = self.convert_clauses(
                     &scruts,
                     clauses,
                     Box::new(|comp: &mut Self, exp| {
-                        Ok(CExp::Continue(id, vec![in comp.cps_bump; exp]))
+                        Ok(CExp::Continue(ret_addr, vec![in comp.cps_bump; exp]))
                     }),
-                )
+                )?;
+                let id = self.builder.fresh_id();
+                let mut params = Vec::new_in(self.cps_bump);
+                for (scrut, _) in scruts {
+                    params.push(scrut)
+                }
+                Ok(CExp::Let(
+                    self.cps_bump.alloc(ADef {
+                        id,
+                        exp: AExp::Lambda(Lambda {
+                            params,
+                            ret_addr,
+                            body: self.cps_bump.alloc(body),
+                        }),
+                    }),
+                    self.cps_bump.alloc(cont(self, id)?),
+                ))
             }
             Exp::Let(dec, exp) => {
                 let id = self.builder.fresh_id();

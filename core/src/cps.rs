@@ -4,16 +4,18 @@ use bumpalo::{
 };
 use std::collections::BTreeMap;
 
-pub mod convert;
+mod convert;
+pub use convert::convert;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id(i32);
 
 pub enum CExp<'a> {
-    Apply(Id, Id, Id),
+    Apply(&'a CExp<'a>, Id),
     Case(Id, Vec<'a, ()>),
     CaseInt(Id, BTreeMap<i64, Id>, Id),
     Continue(Id, Vec<'a, Id>),
+    Enter,
     Let(&'a ADef<'a>, &'a CExp<'a>),
     LetCont(Vec<'a, (Id, Vec<'a, Id>, &'a CExp<'a>)>, &'a CExp<'a>),
 }

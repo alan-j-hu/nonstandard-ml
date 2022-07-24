@@ -30,8 +30,10 @@ fn test_pass(y: &str) {
     let dec = parser::ProgramParser::new().parse(&bump, lexer).unwrap();
     let typed = Bump::new();
     let (_, dec) = elab::elab(&typed, &dec).unwrap();
+    drop(bump);
     let cps = Bump::new();
-    cps::convert::convert(&typed, &cps, &dec).unwrap();
+    cps::convert(&typed, &cps, &dec).unwrap();
+    drop(typed);
 }
 
 macro_rules! syntax_fail {
