@@ -5,7 +5,7 @@ use crate::elab::{
 };
 use bumpalo::{collections::String, vec, Bump};
 use std::collections::VecDeque;
-use std::collections::{hash_map::Entry, BTreeMap, HashMap};
+use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 pub fn convert<'typed, 'cps>(
@@ -49,10 +49,10 @@ fn find_irrefutable<'typed>(clause: &Clause<'typed>) -> Option<usize> {
     None
 }
 
-fn find_nums<'typed>(out: &mut HashMap<i64, ()>, bump: &'typed Bump, pat: &'typed Pat<'typed>) {
+fn find_nums<'typed>(out: &mut HashSet<i64>, bump: &'typed Bump, pat: &'typed Pat<'typed>) {
     match pat.inner {
         PatInner::Int(n) => {
-            out.insert(n, ());
+            out.insert(n);
         }
         PatInner::Or(pat1, pat2) => {
             find_nums(out, bump, pat1);
@@ -120,7 +120,8 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                 Box::new(move |comp, exp2| {
                     let cont_id = comp.builder.fresh_id();
                     let param_id = comp.builder.fresh_id();
-                    let exp1 = comp.convert_exp(exp1, Box::new(move |_, _| Ok(CExp::Enter)))?;
+                    let exp1 =
+                        comp.convert_exp(exp1, Box::new(move |_, _| Ok(CExp::Enter(cont_id))))?;
                     let cont = cont(comp, param_id)?;
                     Ok(CExp::LetCont(
                         vec![in comp.cps_bump;
@@ -132,7 +133,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     ))
                 }),
             ),
-            Exp::Case(ref typ, ref scrut, clauses) => {
+            Exp::Case(ref typ, scrut, clauses) => {
                 let cont_id = self.builder.fresh_id();
                 let var_id = self.builder.fresh_id();
                 self.convert_exp(scrut, Box::new(move |comp, scrut| {
@@ -276,9 +277,9 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     typ::Repr::Unsolved(_) => Err(()),
                     typ::Repr::Solved(typ::Expr::Arrow(_, _)) => Err(()),
                     typ::Repr::Solved(typ::Expr::Integer) => {
-                        let mut map = HashMap::new();
+                        let mut set = HashSet::new();
                         for clause in &matrix {
-                            find_nums(&mut map, &mut self.typed_bump, &clause.lhs[idx]);
+                            find_nums(&mut set, &mut self.typed_bump, &clause.lhs[idx]);
                         }
                         let worklist = VecDeque::from_iter(matrix.iter().cloned());
                         let mut conts = vec![in self.cps_bump];
@@ -289,13 +290,13 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                             }
                         }
                         let mut bmap = BTreeMap::new();
-                        for (n, ()) in map.iter_mut() {
+                        for n in set {
                             let id = self.builder.fresh_id();
                             let matrix =
-                                self.specialize_int(idx, scruts[idx].0, *n, worklist.clone());
+                                self.specialize_int(idx, scruts[idx].0, n, worklist.clone());
                             let body = self.compile_pats(&new_scruts, matrix)?;
                             conts.push((id, vec![in self.cps_bump], &*self.cps_bump.alloc(body)));
-                            bmap.insert(*n, id);
+                            bmap.insert(n, id);
                         }
                         let default_id = self.builder.fresh_id();
                         let default = self.default(idx, scruts[idx].0, worklist);
