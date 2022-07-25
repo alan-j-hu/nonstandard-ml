@@ -120,8 +120,10 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                 Box::new(move |comp, exp2| {
                     let cont_id = comp.builder.fresh_id();
                     let param_id = comp.builder.fresh_id();
-                    let exp1 =
-                        comp.convert_exp(exp1, Box::new(move |_, _| Ok(CExp::Enter(cont_id))))?;
+                    let exp1 = comp.convert_exp(
+                        exp1,
+                        Box::new(move |_, exp1| Ok(CExp::Enter(exp1, cont_id))),
+                    )?;
                     let cont = cont(comp, param_id)?;
                     Ok(CExp::LetCont(
                         vec![in comp.cps_bump;

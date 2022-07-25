@@ -15,7 +15,7 @@ pub enum CExp<'a> {
     Case(Id, Vec<'a, ()>),
     CaseInt(Id, BTreeMap<i64, Id>, Id),
     Continue(Id, Vec<'a, Id>),
-    Enter(Id),
+    Enter(Id, Id),
     Let(&'a ADef<'a>, &'a CExp<'a>),
     LetCont(Vec<'a, (Id, Vec<'a, Id>, &'a CExp<'a>)>, &'a CExp<'a>),
 }

@@ -40,12 +40,12 @@ pub Program: Located<Dec<'a>> = {
    <Loc<Dec>>
 }
 
-pub Dec: Dec<'a> = {
+Dec: Dec<'a> = {
     "val" <pat: Loc<Pat>> "=" <exp: Loc<Exp>> =>
         Dec::Val(bump.alloc(pat), bump.alloc(exp)),
 }
 
-pub Exp: Exp<'a> = {
+Exp: Exp<'a> = {
     "let" <dec: Loc<Dec>> "in" <exp: Loc<Exp>> =>
         Exp::Let(bump.alloc(dec), bump.alloc(exp)),
     AppExp

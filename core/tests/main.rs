@@ -3,7 +3,7 @@ use nonstandard_ml::{
     cps,
     diagnostic::Error,
     elab,
-    syntax::{lexer, parser},
+    syntax::{self, lexer},
 };
 use std::fs;
 
@@ -11,14 +11,14 @@ fn test_syntax_fail(y: &str) {
     let program = fs::read_to_string(y).unwrap();
     let lexer = lexer::Lexer::new(&program);
     let bump = Bump::new();
-    assert!(parser::ProgramParser::new().parse(&bump, lexer).is_err())
+    assert!(syntax::parse(&bump, lexer).is_err())
 }
 
 fn test_typecheck_fail(y: &str) {
     let program = fs::read_to_string(y).unwrap();
     let lexer = lexer::Lexer::new(&program);
     let bump = Bump::new();
-    let dec = parser::ProgramParser::new().parse(&bump, lexer).unwrap();
+    let dec = syntax::parse(&bump, lexer).unwrap();
     let typed = Bump::new();
     assert!(elab::elab(&typed, &dec).is_err())
 }
@@ -27,7 +27,7 @@ fn test_pass(y: &str) {
     let program = fs::read_to_string(y).unwrap();
     let lexer = lexer::Lexer::new(&program);
     let bump = Bump::new();
-    let dec = parser::ProgramParser::new().parse(&bump, lexer).unwrap();
+    let dec = syntax::parse(&bump, lexer).unwrap();
     let typed = Bump::new();
     let (_, dec) = elab::elab(&typed, &dec).unwrap();
     drop(bump);

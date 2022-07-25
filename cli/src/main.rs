@@ -3,7 +3,7 @@ use clap::Parser;
 use nonstandard_ml::{
     diagnostic::Error,
     elab,
-    syntax::{lexer, parser},
+    syntax::{self, lexer},
 };
 use std::fs;
 
@@ -16,9 +16,7 @@ struct Args {
 
 fn compile<'a>(program: &'a str, bump: &'a Bump) -> Result<(), Error<'a>> {
     let lexer = lexer::Lexer::new(&program);
-    let dec = parser::ProgramParser::new()
-        .parse(bump, lexer)
-        .map_err(|e| Error::Syntax(e))?;
+    let dec = syntax::parse(bump, lexer).map_err(|e| Error::Syntax(e))?;
     let typed = Bump::new();
     let _ = elab::elab(&typed, &dec).map_err(|_| Error::Elab)?;
     Ok(())
