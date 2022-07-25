@@ -11,11 +11,10 @@ pub use convert::convert;
 pub struct Id(i32);
 
 pub enum CExp<'a> {
-    Apply(&'a CExp<'a>, Id),
+    Apply(Id, Id, Id),
     Case(Id, Vec<'a, ()>),
     CaseInt(Id, BTreeMap<i64, Id>, Id),
     Continue(Id, Vec<'a, Id>),
-    Enter(Id, Id),
     Let(&'a ADef<'a>, &'a CExp<'a>),
     LetCont(Vec<'a, (Id, Vec<'a, Id>, &'a CExp<'a>)>, &'a CExp<'a>),
 }

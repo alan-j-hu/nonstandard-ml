@@ -121,11 +121,10 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                 let app = self.convert_exp(
                     exp2,
                     Box::new(|comp, exp2| {
-                        let exp1 = comp.convert_exp(
+                        comp.convert_exp(
                             exp1,
-                            Box::new(|_, exp1| Ok(CExp::Enter(exp1, cont_id))),
-                        )?;
-                        Ok(CExp::Apply(comp.cps_bump.alloc(exp1), exp2))
+                            Box::new(|_, exp1| Ok(CExp::Apply(exp1, exp2, cont_id))),
+                        )
                     }),
                 )?;
                 let cont = cont(self, param_id)?;
