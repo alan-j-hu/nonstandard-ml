@@ -18,12 +18,12 @@ pub fn parse<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{ast, lexer, parser, Error};
+    use super::{ast, lexer, Error};
     use bumpalo::Bump;
 
     fn parse<'a>(bump: &'a Bump, s: &'a str) -> Result<ast::Located<ast::Dec<'a>>, Error<'a>> {
         let lexer = lexer::Lexer::new(s);
-        parse(bump, lexer)
+        super::parse(bump, lexer)
     }
 
     #[test]

@@ -5,7 +5,7 @@ use crate::elab::{
 };
 use bumpalo::{collections::String, vec, Bump};
 use std::collections::VecDeque;
-use std::collections::{hash_map::Entry, BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 pub fn convert<'typed, 'cps>(
