@@ -73,15 +73,12 @@ Pat: Pat<'a> = {
     Id => Pat::Var(bump.alloc(<>)),
 }
 
-Pats: Vec<'a, Located<Pat<'a>>> = {
-    <pat: Loc<Pat>> => {
-        let mut v = Vec::new_in(bump);
+Pats: (Located<Pat<'a>>, Vec<'a, Located<Pat<'a>>>) = {
+    <pat: Loc<Pat>> => (pat, Vec::new_in(bump)),
+    <pr: Pats> <pat: Loc<Pat>> => {
+        let (p, mut v) = pr;
         v.push(pat);
-        v
-    },
-    <mut v: Pats> <pat: Loc<Pat>> => {
-        v.push(pat);
-        v
+        (p, v)
     },
 }
 
@@ -99,8 +96,12 @@ Cases: Vec<'a, Case<'a>> = {
 }
 
 Case: Case<'a> = {
-    <mut pats: Pats> "=>" <exp: Loc<Exp>> => Case {
-        lhs: bump.alloc_slice_fill_iter(pats.drain(..)),
-        rhs: exp
+    <pr: Pats> "=>" <exp: Loc<Exp>> => {
+        let (pat, mut pats) = pr;
+        Case {
+            pat: bump.alloc(pat),
+            pats: bump.alloc_slice_fill_iter(pats.drain(..)),
+            rhs: exp
+        }
     }
 }

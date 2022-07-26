@@ -21,7 +21,8 @@ pub enum Exp<'a> {
 }
 
 pub struct Case<'a> {
-    pub lhs: &'a [Located<Pat<'a>>],
+    pub pat: &'a Located<Pat<'a>>,
+    pub pats: &'a [Located<Pat<'a>>],
     pub rhs: Located<Exp<'a>>,
 }
 

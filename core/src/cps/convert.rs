@@ -164,14 +164,16 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                 let cont = cont(self, id)?;
                 Ok(CExp::Let(def, self.cps_bump.alloc(cont)))
             }
-            Exp::Lambda(ref dom, clauses) => {
+            Exp::Lambda(ref dom, ref doms, clauses) => {
                 if clauses.len() == 0 {
                     return Err(()); // Handle empty type later
                 }
                 // NOTE: The number of patterns in a clause is not necessarily
                 // the same as the number of arrows in the type!
                 let mut scruts = std::vec::Vec::new();
-                for (typ, _) in dom.iter().zip(clauses[0].lhs.iter()) {
+                let first_scrut = self.builder.fresh_id();
+                scruts.push((first_scrut, dom.clone()));
+                for (typ, _) in doms.iter().zip(clauses[0].pats.iter()) {
                     scruts.push((self.builder.fresh_id(), typ.clone()));
                 }
                 let ret_addr = self.builder.fresh_id();
@@ -221,11 +223,17 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                                 new_ret_addr,
                             )
                         });
-                let exp = self.builder.fresh_id();
-                Ok(CExp::LetCont(
-                    vec![in self.cps_bump;
-                         (ret_addr, vec![in self.cps_bump; exp], &*self.cps_bump.alloc(cont(self, exp)?))],
-                    &*self.cps_bump.alloc(body),
+                let id = self.builder.fresh_id();
+                Ok(CExp::Let(
+                    self.cps_bump.alloc(ADef {
+                        id,
+                        exp: AExp::Lambda(Lambda {
+                            param: first_scrut,
+                            ret_addr,
+                            body: self.cps_bump.alloc(body),
+                        }),
+                    }),
+                    self.cps_bump.alloc(cont(self, id)?),
                 ))
             }
             Exp::Let(dec, exp) => {
@@ -259,9 +267,10 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
     ) -> Result<CExp<'cps>, ()> {
         let mut matrix = std::vec::Vec::new();
         let mut rhss = Vec::new_in(self.cps_bump);
-        for Case { lhs, rhs } in clauses {
+        for Case { pat, pats, rhs } in clauses {
             let mut params = std::vec::Vec::new();
-            for pat in lhs {
+            self.gather_bindings(pat, &mut params);
+            for pat in pats {
                 self.gather_bindings(pat, &mut params);
             }
             let id = self.builder.fresh_id();
@@ -273,7 +282,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
             rhss.push((id, v, &*self.cps_bump.alloc(body)));
             let params = Rc::new(params);
             matrix.push(Clause {
-                lhs: lhs.iter().collect(),
+                lhs: std::iter::once(pat).chain(pats.iter()).collect(),
                 rhs: id,
                 vars: HashMap::new(),
                 params: params,
