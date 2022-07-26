@@ -165,31 +165,67 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                 Ok(CExp::Let(def, self.cps_bump.alloc(cont)))
             }
             Exp::Lambda(ref dom, clauses) => {
+                if clauses.len() == 0 {
+                    return Err(()); // Handle empty type later
+                }
+                // NOTE: The number of patterns in a clause is not necessarily
+                // the same as the number of arrows in the type!
                 let mut scruts = std::vec::Vec::new();
-                for typ in dom {
+                for (typ, _) in dom.iter().zip(clauses[0].lhs.iter()) {
                     scruts.push((self.builder.fresh_id(), typ.clone()));
                 }
                 let ret_addr = self.builder.fresh_id();
+                let mut body = self.convert_clauses(
+                    &scruts,
+                    clauses,
+                    &(|exp| CExp::Continue(ret_addr, vec![in self.cps_bump; exp])),
+                )?;
+                // fun x y z -> e
+                //
+                // becomes
+                //
+                // let a = fun x k1 ->
+                //   let b = fun y k2 ->
+                //     let c = fun z k3 -> k3 e
+                //     in k2 c
+                //   in k1 b
+                // in k a
                 let body = self.convert_clauses(
                     &scruts,
                     clauses,
                     &(|exp| CExp::Continue(ret_addr, vec![in self.cps_bump; exp])),
                 )?;
-                let id = self.builder.fresh_id();
-                let mut params = Vec::new_in(self.cps_bump);
-                for (scrut, _) in scruts {
-                    params.push(scrut)
-                }
-                Ok(CExp::Let(
-                    self.cps_bump.alloc(ADef {
-                        id,
-                        exp: AExp::Lambda(Lambda {
-                            params,
-                            ret_addr,
-                            body: self.cps_bump.alloc(body),
-                        }),
-                    }),
-                    self.cps_bump.alloc(cont(self, id)?),
+                let ret_addr = self.builder.fresh_id();
+                let (body, ret_addr) =
+                    scruts
+                        .iter()
+                        .rev()
+                        .fold((body, ret_addr), |(body, ret_addr), (param, typ)| {
+                            let id = self.builder.fresh_id();
+                            let new_ret_addr = self.builder.fresh_id();
+                            (
+                                CExp::Let(
+                                    self.cps_bump.alloc(ADef {
+                                        id,
+                                        exp: AExp::Lambda(Lambda {
+                                            param: *param,
+                                            ret_addr,
+                                            body: self.cps_bump.alloc(body),
+                                        }),
+                                    }),
+                                    self.cps_bump.alloc(CExp::Continue(
+                                        new_ret_addr,
+                                        vec![in self.cps_bump; id],
+                                    )),
+                                ),
+                                new_ret_addr,
+                            )
+                        });
+                let exp = self.builder.fresh_id();
+                Ok(CExp::LetCont(
+                    vec![in self.cps_bump;
+                         (ret_addr, vec![in self.cps_bump; exp], &*self.cps_bump.alloc(cont(self, exp)?))],
+                    &*self.cps_bump.alloc(body),
                 ))
             }
             Exp::Let(dec, exp) => {

@@ -33,7 +33,7 @@ pub enum AExp<'a> {
 pub struct AUse<'a>(&'a ADef<'a>);
 
 pub struct Lambda<'a> {
-    params: Vec<'a, Id>,
+    param: Id,
     ret_addr: Id,
     body: &'a CExp<'a>,
 }
