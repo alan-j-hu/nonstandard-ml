@@ -2,6 +2,7 @@ use bumpalo::collections::{String, Vec};
 use std::collections::BTreeMap;
 
 mod convert;
+pub use convert::compile;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Register(i32);
@@ -20,6 +21,8 @@ pub enum Instr<'a> {
 pub enum Terminator<'a> {
     CaseInt(Register, BTreeMap<i64, BlockName>, BlockName),
     Continue(BlockName, Vec<'a, Register>),
+    Return(Register),
+    TailCall(Register, Register),
 }
 
 pub struct Def<'a> {
@@ -40,7 +43,7 @@ pub struct Block<'a> {
 }
 
 pub struct Fn<'a> {
-    pub params: Vec<'a, Register>,
+    pub param: Register,
     pub blocks: BTreeMap<BlockName, Block<'a>>,
     pub entry: BlockName,
 }

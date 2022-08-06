@@ -12,7 +12,7 @@ pub fn convert<'typed, 'cps>(
     typed_bump: &'typed Bump,
     cps_bump: &'cps Bump,
     dec: &'typed Dec<'typed>,
-) -> Result<CExp<'cps>, ()> {
+) -> Result<(Id, CExp<'cps>), ()> {
     let mut compiler = Compiler {
         builder: Builder::new(),
         typed_bump,
@@ -20,7 +20,8 @@ pub fn convert<'typed, 'cps>(
         vars: HashMap::new(),
     };
     let id = compiler.builder.fresh_id();
-    compiler.convert_dec(dec, id)
+    let cexp = compiler.convert_dec(dec, id)?;
+    Ok((id, cexp))
 }
 
 struct Compiler<'typed, 'cps> {
@@ -192,32 +193,30 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     clauses,
                     &(|exp| CExp::Continue(ret_addr, vec![in self.cps_bump; exp])),
                 )?;
-                let ret_addr = self.builder.fresh_id();
-                let (body, ret_addr) =
-                    scruts
-                        .iter()
-                        .rev()
-                        .fold((body, ret_addr), |(body, ret_addr), (param, typ)| {
-                            let id = self.builder.fresh_id();
-                            let new_ret_addr = self.builder.fresh_id();
-                            (
-                                CExp::Let(
-                                    self.cps_bump.alloc(ADef {
-                                        id,
-                                        exp: AExp::Lambda(Lambda {
-                                            param: *param,
-                                            ret_addr,
-                                            body: self.cps_bump.alloc(body),
-                                        }),
+                let (body, ret_addr) = scruts[1..].iter().rev().fold(
+                    (body, ret_addr),
+                    |(body, ret_addr), (param, _typ)| {
+                        let id = self.builder.fresh_id();
+                        let new_ret_addr = self.builder.fresh_id();
+                        (
+                            CExp::Let(
+                                self.cps_bump.alloc(ADef {
+                                    id,
+                                    exp: AExp::Lambda(Lambda {
+                                        param: *param,
+                                        ret_addr,
+                                        body: self.cps_bump.alloc(body),
                                     }),
-                                    self.cps_bump.alloc(CExp::Continue(
-                                        new_ret_addr,
-                                        vec![in self.cps_bump; id],
-                                    )),
-                                ),
-                                new_ret_addr,
-                            )
-                        });
+                                }),
+                                self.cps_bump.alloc(CExp::Continue(
+                                    new_ret_addr,
+                                    vec![in self.cps_bump; id],
+                                )),
+                            ),
+                            new_ret_addr,
+                        )
+                    },
+                );
                 let id = self.builder.fresh_id();
                 Ok(CExp::Let(
                     self.cps_bump.alloc(ADef {

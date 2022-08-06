@@ -2,7 +2,7 @@ use bumpalo::Bump;
 use nonstandard_ml::{
     cps,
     diagnostic::Error,
-    elab,
+    elab, ssa,
     syntax::{self, lexer},
 };
 use std::fs;
@@ -32,8 +32,10 @@ fn test_pass(y: &str) {
     let (_, dec) = elab::elab(&typed, &dec).unwrap();
     drop(bump);
     let cps = Bump::new();
-    cps::convert(&typed, &cps, &dec).unwrap();
+    let (ret_addr, cexp) = cps::convert(&typed, &cps, &dec).unwrap();
     drop(typed);
+    let ssa = Bump::new();
+    ssa::compile(&ssa, ret_addr, &cexp).unwrap();
 }
 
 macro_rules! syntax_fail {

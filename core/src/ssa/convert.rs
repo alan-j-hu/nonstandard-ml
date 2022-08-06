@@ -4,8 +4,42 @@ use bumpalo::{
 };
 use std::collections::{BTreeMap, HashMap};
 
+use super::*;
 use crate::cps::{AExp, CExp, Id, Lambda};
-use crate::ssa::{Block, BlockName, Def, Expr, Fn, FnName, Instr, Register, Terminator};
+
+pub fn compile<'cps, 'ssa>(
+    bump: &'ssa Bump,
+    ret_addr: Id,
+    exp: &'cps CExp<'cps>,
+) -> Result<Program<'ssa>, ()> {
+    let mut ctx = Context {
+        fn_counter: 0,
+        fns: BTreeMap::new(),
+    };
+    let mut builder = FnBuilder::new(ret_addr);
+    let mut instrs = Vec::new_in(bump);
+    let entry_block = builder.fresh_block();
+    let terminator = convert(&mut ctx, bump, &mut builder, &mut instrs, exp)?;
+    let block = Block {
+        params: Vec::new_in(bump),
+        instrs,
+        terminator,
+    };
+    let param = builder.fresh_register();
+    let FnBuilder { mut blocks, .. } = builder;
+    blocks.insert(entry_block, block);
+    let fun = Fn {
+        param,
+        blocks,
+        entry: entry_block,
+    };
+    let entry_fn = ctx.add_fn(fun);
+    let Context { fns, .. } = ctx;
+    Ok(Program {
+        fns,
+        entry: entry_fn,
+    })
+}
 
 pub struct Context<'a> {
     fn_counter: i32,
@@ -25,6 +59,7 @@ impl<'a> Context<'a> {
 pub struct FnBuilder<'ssa> {
     block_counter: i32,
     reg_counter: i32,
+    ret_addr: Id,
     free_vars: std::vec::Vec<Id>,
     regs: HashMap<Id, Register>,
     conts: HashMap<Id, BlockName>,
@@ -32,10 +67,11 @@ pub struct FnBuilder<'ssa> {
 }
 
 impl<'ssa> FnBuilder<'ssa> {
-    pub fn new() -> Self {
+    pub fn new(ret_addr: Id) -> Self {
         Self {
             block_counter: 0,
             reg_counter: 0,
+            ret_addr,
             free_vars: std::vec::Vec::new(),
             regs: HashMap::new(),
             conts: HashMap::new(),
@@ -74,7 +110,9 @@ pub fn compile_fn<'cps, 'ssa>(
     lam: &'cps Lambda<'cps>,
 ) -> Result<(Fn<'ssa>, std::vec::Vec<Id>), ()> {
     let mut instrs = Vec::new_in(bump);
-    let mut builder = FnBuilder::new();
+    let mut builder = FnBuilder::new(lam.ret_addr);
+    let param = builder.fresh_register();
+    builder.regs.insert(lam.param, param);
     let entry = builder.fresh_block();
     let terminator = convert(ctx, bump, &mut builder, &mut instrs, lam.body)?;
     let FnBuilder {
@@ -89,7 +127,7 @@ pub fn compile_fn<'cps, 'ssa>(
     };
     blocks.insert(entry, entry_block);
     let fun = Fn {
-        params: Vec::new_in(bump),
+        param,
         blocks,
         entry,
     };
@@ -99,54 +137,66 @@ pub fn compile_fn<'cps, 'ssa>(
 pub fn convert<'cps, 'ssa>(
     ctx: &mut Context<'ssa>,
     bump: &'ssa Bump,
-    comp: &mut FnBuilder<'ssa>,
+    builder: &mut FnBuilder<'ssa>,
     out: &mut Vec<'ssa, Instr<'ssa>>,
     exp: &'cps CExp<'cps>,
 ) -> Result<Terminator<'ssa>, ()> {
     match exp {
         CExp::Apply(f, x, cont) => {
-            let f = comp.get_reg(f);
-            let x = comp.get_reg(x);
-            let reg = comp.fresh_register();
-            out.push(Instr::Apply(reg, f, x));
-            let block = match comp.conts.get(cont) {
-                Some(block) => block,
-                None => return Err(()),
-            };
-            Ok(Terminator::Continue(*block, vec![in bump; reg]))
+            let f = builder.get_reg(f);
+            let x = builder.get_reg(x);
+            if *cont == builder.ret_addr {
+                Ok(Terminator::TailCall(f, x))
+            } else {
+                let reg = builder.fresh_register();
+                out.push(Instr::Apply(reg, f, x));
+                let block = match builder.conts.get(cont) {
+                    Some(block) => block,
+                    None => panic!("a"),
+                };
+                Ok(Terminator::Continue(*block, vec![in bump; reg]))
+            }
         }
         CExp::Case(_, _) => todo!(),
         CExp::CaseInt(scrut, cases, default) => {
-            let scrut = comp.get_reg(scrut);
+            let scrut = builder.get_reg(scrut);
             let mut jump_table = BTreeMap::new();
             for (num, cont) in cases {
-                let block = match comp.conts.get(cont) {
+                let block = match builder.conts.get(cont) {
                     Some(block) => block,
-                    None => return Err(()),
+                    None => panic!("b"),
                 };
                 jump_table.insert(*num, *block);
             }
-            let default = match comp.conts.get(default) {
+            let default = match builder.conts.get(default) {
                 Some(block) => block,
-                None => return Err(()),
+                None => panic!("c"),
             };
             Ok(Terminator::CaseInt(scrut, jump_table, *default))
         }
-        CExp::Continue(cont, args) => match comp.conts.get(cont) {
-            None => Err(()),
-            Some(block) => {
-                let mut regs = Vec::new_in(bump);
-                for id in args {
-                    match comp.regs.get(id) {
-                        None => return Err(()),
-                        Some(reg) => regs.push(*reg),
-                    }
+        CExp::Continue(cont, args) if *cont == builder.ret_addr => {
+            if args.len() == 1 {
+                match builder.regs.get(&args[0]) {
+                    None => Err(()),
+                    Some(reg) => Ok(Terminator::Return(*reg)),
                 }
-                Ok(Terminator::Continue(*block, regs))
+            } else {
+                Err(())
             }
-        },
+        }
+        CExp::Continue(cont, args) => {
+            let block = match builder.conts.get(cont) {
+                None => return Err(()),
+                Some(block) => *block,
+            };
+            let mut regs = Vec::new_in(bump);
+            for id in args {
+                regs.push(builder.get_reg(id))
+            }
+            Ok(Terminator::Continue(block, regs))
+        }
         CExp::Let(def, cont) => {
-            let register = comp.fresh_register();
+            let register = builder.fresh_register();
             let expr = match def.exp {
                 AExp::Integer(n) => Expr::Int(n),
                 AExp::Lambda(ref lam) => {
@@ -154,8 +204,8 @@ pub fn convert<'cps, 'ssa>(
                     let fn_name = ctx.add_fn(fun);
                     let mut env = Vec::new_in(bump);
                     for id in free_vars {
-                        match comp.regs.get(&id) {
-                            None => return Err(()),
+                        match builder.regs.get(&id) {
+                            None => panic!("e"),
                             Some(reg) => env.push(*reg),
                         }
                     }
@@ -164,32 +214,33 @@ pub fn convert<'cps, 'ssa>(
                 AExp::String(ref s) => Expr::String(String::from_str_in(s, bump)),
             };
             out.push(Instr::Let(Def { register, expr }));
-            convert(ctx, bump, comp, out, cont)
+            builder.regs.insert(def.id, register);
+            convert(ctx, bump, builder, out, cont)
         }
         CExp::LetCont(def_conts, cont) => {
             let mut block_names = std::vec::Vec::new();
             for (name, params, body) in def_conts {
-                let block_name = comp.fresh_block();
-                comp.conts.insert(*name, block_name);
+                let block_name = builder.fresh_block();
+                builder.conts.insert(*name, block_name);
                 block_names.push((block_name, params, body))
             }
             for (name, old_params, body) in block_names {
                 let mut params = Vec::new_in(bump);
                 for param in old_params {
-                    let reg = comp.fresh_register();
-                    comp.regs.insert(*param, reg);
+                    let reg = builder.fresh_register();
+                    builder.regs.insert(*param, reg);
                     params.push(reg)
                 }
                 let mut instrs = Vec::new_in(bump);
-                let terminator = convert(ctx, bump, comp, &mut instrs, *body)?;
+                let terminator = convert(ctx, bump, builder, &mut instrs, *body)?;
                 let block = Block {
                     params,
                     instrs,
                     terminator,
                 };
-                comp.blocks.insert(name, block);
+                builder.blocks.insert(name, block);
             }
-            convert(ctx, bump, comp, out, cont)
+            convert(ctx, bump, builder, out, cont)
         }
     }
 }

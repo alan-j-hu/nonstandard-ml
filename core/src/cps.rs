@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 mod convert;
 pub use convert::convert;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id(i32);
 
 pub enum CExp<'a> {
@@ -30,8 +30,8 @@ pub enum AExp<'a> {
 pub struct AUse<'a>(&'a ADef<'a>);
 
 pub struct Lambda<'a> {
-    param: Id,
-    ret_addr: Id,
+    pub param: Id,
+    pub ret_addr: Id,
     pub body: &'a CExp<'a>,
 }
 
