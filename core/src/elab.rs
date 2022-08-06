@@ -174,7 +174,7 @@ impl Elaborator {
         for ast::Case { pat, pats, rhs } in cases {
             let mut vals = HashMap::new();
             if pats.len() == froms.len() {
-                let mut new_pat = self.rename_pat(bump, &mut vals, &pat, from.clone())?;
+                let new_pat = self.rename_pat(bump, &mut vals, &pat, from.clone())?;
                 let mut new_pats = Vec::new_in(bump);
                 for (pat, typ) in pats.iter().zip(froms) {
                     let pat = self.rename_pat(bump, &mut vals, &pat, typ.clone())?;

@@ -177,11 +177,6 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     scruts.push((self.builder.fresh_id(), typ.clone()));
                 }
                 let ret_addr = self.builder.fresh_id();
-                let mut body = self.convert_clauses(
-                    &scruts,
-                    clauses,
-                    &(|exp| CExp::Continue(ret_addr, vec![in self.cps_bump; exp])),
-                )?;
                 // fun x y z -> e
                 //
                 // becomes

@@ -1,5 +1,5 @@
+use crate::cps::Id;
 use bumpalo::collections::{String, Vec};
-use bumpalo::Bump;
 use std::collections::{BTreeMap, HashMap};
 
 mod convert;
@@ -63,16 +63,36 @@ impl GlobalContext {
     }
 }
 
-pub struct FnContext {
+pub struct FnBuilder<'ssa> {
     block_counter: i32,
     reg_counter: i32,
+    free_vars: std::vec::Vec<Id>,
+    regs: HashMap<Id, Register>,
+    conts: HashMap<Id, BlockName>,
+    blocks: HashMap<BlockName, Block<'ssa>>,
 }
 
-impl FnContext {
+impl<'ssa> FnBuilder<'ssa> {
     pub fn new() -> Self {
         Self {
             block_counter: 0,
             reg_counter: 0,
+            free_vars: std::vec::Vec::new(),
+            regs: HashMap::new(),
+            conts: HashMap::new(),
+            blocks: HashMap::new(),
+        }
+    }
+
+    fn get_reg(&mut self, id: &Id) -> Register {
+        match self.regs.get(id) {
+            Some(reg) => *reg,
+            None => {
+                let reg = self.fresh_register();
+                self.free_vars.push(*id);
+                self.regs.insert(*id, reg);
+                reg
+            }
         }
     }
 
