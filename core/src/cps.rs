@@ -1,13 +1,10 @@
-use bumpalo::{
-    collections::{String, Vec},
-    Bump,
-};
+use bumpalo::collections::{String, Vec};
 use std::collections::BTreeMap;
 
 mod convert;
 pub use convert::convert;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id(i32);
 
 pub enum CExp<'a> {
@@ -35,7 +32,7 @@ pub struct AUse<'a>(&'a ADef<'a>);
 pub struct Lambda<'a> {
     param: Id,
     ret_addr: Id,
-    body: &'a CExp<'a>,
+    pub body: &'a CExp<'a>,
 }
 
 pub struct Builder {
