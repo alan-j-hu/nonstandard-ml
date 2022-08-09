@@ -5,7 +5,7 @@ use bumpalo::{
 use std::collections::{BTreeMap, HashMap};
 
 use super::*;
-use crate::cps::{AExp, CExp, Id, Lambda};
+use crate::cps::{AExp, CExp, Id, Lambda, Val};
 
 pub fn compile<'cps, 'ssa>(
     bump: &'ssa Bump,
@@ -134,6 +134,18 @@ pub fn compile_fn<'cps, 'ssa>(
     Ok((fun, free_vars))
 }
 
+pub fn convert_val<'cps, 'ssa>(
+    builder: &mut FnBuilder<'ssa>,
+    bump: &'ssa Bump,
+    val: &'cps Val<'cps>,
+) -> Operand<'ssa> {
+    match val {
+        Val::Integer(n) => Operand::Int(*n),
+        Val::String(ref s) => Operand::String(String::from_str_in(s, bump)),
+        Val::Id(id) => Operand::Register(builder.get_reg(id)),
+    }
+}
+
 pub fn convert<'cps, 'ssa>(
     ctx: &mut Context<'ssa>,
     bump: &'ssa Bump,
@@ -143,8 +155,8 @@ pub fn convert<'cps, 'ssa>(
 ) -> Result<Terminator<'ssa>, ()> {
     match exp {
         CExp::Apply(f, x, cont) => {
-            let f = builder.get_reg(f);
-            let x = builder.get_reg(x);
+            let f = convert_val(builder, bump, f);
+            let x = convert_val(builder, bump, x);
             if *cont == builder.ret_addr {
                 Ok(Terminator::TailCall(f, x))
             } else {
@@ -154,12 +166,15 @@ pub fn convert<'cps, 'ssa>(
                     Some(block) => block,
                     None => panic!("a"),
                 };
-                Ok(Terminator::Continue(*block, vec![in bump; reg]))
+                Ok(Terminator::Continue(
+                    *block,
+                    vec![in bump; Operand::Register(reg)],
+                ))
             }
         }
         CExp::Case(_, _) => todo!(),
         CExp::CaseInt(scrut, cases, default) => {
-            let scrut = builder.get_reg(scrut);
+            let scrut = convert_val(builder, bump, scrut);
             let mut jump_table = BTreeMap::new();
             for (num, cont) in cases {
                 let block = match builder.conts.get(cont) {
@@ -176,10 +191,8 @@ pub fn convert<'cps, 'ssa>(
         }
         CExp::Continue(cont, args) if *cont == builder.ret_addr => {
             if args.len() == 1 {
-                match builder.regs.get(&args[0]) {
-                    None => Err(()),
-                    Some(reg) => Ok(Terminator::Return(*reg)),
-                }
+                let v = convert_val(builder, bump, &args[0]);
+                Ok(Terminator::Return(v))
             } else {
                 Err(())
             }
@@ -189,16 +202,15 @@ pub fn convert<'cps, 'ssa>(
                 None => return Err(()),
                 Some(block) => *block,
             };
-            let mut regs = Vec::new_in(bump);
+            let mut vals = Vec::new_in(bump);
             for id in args {
-                regs.push(builder.get_reg(id))
+                vals.push(convert_val(builder, bump, id))
             }
-            Ok(Terminator::Continue(block, regs))
+            Ok(Terminator::Continue(block, vals))
         }
         CExp::Let(def, cont) => {
             let register = builder.fresh_register();
             let expr = match def.exp {
-                AExp::Integer(n) => Expr::Int(n),
                 AExp::Lambda(ref lam) => {
                     let (fun, free_vars) = compile_fn(ctx, bump, lam)?;
                     let fn_name = ctx.add_fn(fun);
@@ -211,7 +223,6 @@ pub fn convert<'cps, 'ssa>(
                     }
                     Expr::Closure(fn_name, env)
                 }
-                AExp::String(ref s) => Expr::String(String::from_str_in(s, bump)),
             };
             out.push(Instr::Let(Def { register, expr }));
             builder.regs.insert(def.id, register);

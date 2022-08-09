@@ -32,14 +32,14 @@ struct Compiler<'typed, 'cps> {
 }
 
 #[derive(Clone)]
-struct Clause<'typed> {
+struct Clause<'typed, 'cps> {
     lhs: std::vec::Vec<&'typed Pat<'typed>>,
     rhs: Id,
-    vars: HashMap<Var<'typed>, Id>,
+    vars: HashMap<Var<'typed>, Val<'cps>>,
     params: Rc<std::vec::Vec<(Var<'typed>, Id)>>,
 }
 
-fn find_irrefutable<'typed>(clause: &Clause<'typed>) -> Option<usize> {
+fn find_irrefutable<'typed, 'cps>(clause: &Clause<'typed, 'cps>) -> Option<usize> {
     for (i, elt) in clause.lhs.iter().enumerate() {
         match elt.inner {
             PatInner::Int(_) => return Some(i),
@@ -63,12 +63,16 @@ fn find_nums<'typed>(out: &mut HashSet<i64>, bump: &'typed Bump, pat: &'typed Pa
     }
 }
 
-fn remove_pat<'typed>(clause: Clause<'typed>, idx: usize, scrut: Id) -> Clause<'typed> {
+fn remove_pat<'typed, 'cps>(
+    clause: Clause<'typed, 'cps>,
+    idx: usize,
+    scrut: Val<'cps>,
+) -> Clause<'typed, 'cps> {
     let mut lhs = clause.lhs.clone();
     lhs.remove(idx);
     let mut vars = clause.vars;
     for var in &clause.lhs[idx].vars {
-        vars.insert(var.clone(), scrut);
+        vars.insert(var.clone(), scrut.clone());
     }
     Clause {
         lhs,
@@ -113,7 +117,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
     fn convert_exp(
         &mut self,
         exp: &'typed Exp<'typed>,
-        cont: Box<dyn FnOnce(&mut Self, Id) -> Result<CExp<'cps>, ()> + '_>,
+        cont: Box<dyn FnOnce(&mut Self, Val<'cps>) -> Result<CExp<'cps>, ()> + '_>,
     ) -> Result<CExp<'cps>, ()> {
         match *exp {
             Exp::Apply(exp1, exp2) => {
@@ -128,7 +132,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                         )
                     }),
                 )?;
-                let cont = cont(self, param_id)?;
+                let cont = cont(self, Val::Id(param_id))?;
                 Ok(CExp::LetCont(
                     vec![in self.cps_bump;
                          (cont_id,
@@ -152,31 +156,29 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                 )?;
                 Ok(CExp::LetCont(
                     vec![in self.cps_bump;
-                         (cont_id, vec![in self.cps_bump; var_id], &*self.cps_bump.alloc(cont(self, var_id)?))],
+                         (cont_id, vec![in self.cps_bump; var_id], &*self.cps_bump.alloc(cont(self, Val::Id(var_id))?))],
                     &*self.cps_bump.alloc(match_cexp),
                 ))
             }
-            Exp::Integer(n) => {
-                let id = self.builder.fresh_id();
-                let def = self.cps_bump.alloc(ADef {
-                    exp: AExp::Integer(n),
-                    id,
-                });
-                let cont = cont(self, id)?;
-                Ok(CExp::Let(def, self.cps_bump.alloc(cont)))
-            }
+            Exp::Integer(n) => cont(self, Val::Integer(n)),
             Exp::Lambda(ref dom, ref doms, clauses) => {
                 if clauses.len() == 0 {
                     return Err(()); // Handle empty type later
                 }
                 // NOTE: The number of patterns in a clause is not necessarily
                 // the same as the number of arrows in the type!
-                let mut scruts = std::vec::Vec::new();
-                let first_scrut = self.builder.fresh_id();
-                scruts.push((first_scrut, dom.clone()));
+                let mut params = std::vec::Vec::new();
+                let first_param = self.builder.fresh_id();
                 for (typ, _) in doms.iter().zip(clauses[0].pats.iter()) {
-                    scruts.push((self.builder.fresh_id(), typ.clone()));
+                    params.push((self.builder.fresh_id(), typ.clone()))
                 }
+
+                let mut scruts = std::vec::Vec::new();
+                scruts.push((Val::Id(first_param), dom.clone()));
+                for (id, typ) in &params {
+                    scruts.push((Val::Id(*id), typ.clone()))
+                }
+
                 let ret_addr = self.builder.fresh_id();
                 // fun x y z -> e
                 //
@@ -193,7 +195,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     clauses,
                     &(|exp| CExp::Continue(ret_addr, vec![in self.cps_bump; exp])),
                 )?;
-                let (body, ret_addr) = scruts[1..].iter().rev().fold(
+                let (body, ret_addr) = params.iter().rev().fold(
                     (body, ret_addr),
                     |(body, ret_addr), (param, _typ)| {
                         let id = self.builder.fresh_id();
@@ -210,7 +212,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                                 }),
                                 self.cps_bump.alloc(CExp::Continue(
                                     new_ret_addr,
-                                    vec![in self.cps_bump; id],
+                                    vec![in self.cps_bump; Val::Id(id)],
                                 )),
                             ),
                             new_ret_addr,
@@ -222,12 +224,12 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     self.cps_bump.alloc(ADef {
                         id,
                         exp: AExp::Lambda(Lambda {
-                            param: first_scrut,
+                            param: first_param,
                             ret_addr,
                             body: self.cps_bump.alloc(body),
                         }),
                     }),
-                    self.cps_bump.alloc(cont(self, id)?),
+                    self.cps_bump.alloc(cont(self, Val::Id(id))?),
                 ))
             }
             Exp::Let(dec, exp) => {
@@ -239,25 +241,16 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     &*self.cps_bump.alloc(dec),
                 ))
             }
-            Exp::String(ref s) => {
-                let id = self.builder.fresh_id();
-                Ok(CExp::Let(
-                    &*self.cps_bump.alloc(ADef {
-                        id,
-                        exp: AExp::String(String::from_str_in(s, self.cps_bump)),
-                    }),
-                    &*self.cps_bump.alloc(cont(self, id)?),
-                ))
-            }
-            Exp::Var(ref v) => cont(self, *self.vars.get(v).unwrap()),
+            Exp::String(ref s) => cont(self, Val::String(String::from_str_in(s, self.cps_bump))),
+            Exp::Var(ref v) => cont(self, Val::Id(*self.vars.get(v).unwrap())),
         }
     }
 
     fn convert_clauses(
         &mut self,
-        typs: &[(Id, typ::Type)],
+        typs: &[(Val<'cps>, typ::Type)],
         clauses: &'typed [Case<'typed>],
-        cont: &dyn Fn(Id) -> CExp<'cps>,
+        cont: &dyn Fn(Val<'cps>) -> CExp<'cps>,
     ) -> Result<CExp<'cps>, ()> {
         let mut matrix = std::vec::Vec::new();
         let mut rhss = Vec::new_in(self.cps_bump);
@@ -290,8 +283,8 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
 
     fn compile_pats(
         &mut self,
-        scruts: &[(Id, typ::Type)],
-        mut matrix: std::vec::Vec<Clause<'typed>>,
+        scruts: &[(Val<'cps>, typ::Type)],
+        mut matrix: std::vec::Vec<Clause<'typed, 'cps>>,
     ) -> Result<CExp<'cps>, ()> {
         if matrix.len() == 0 {
             Err(())
@@ -307,7 +300,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     } = matrix.remove(0);
                     for (pat, (scrut, _)) in lhs.iter().zip(scruts) {
                         for var in &pat.vars {
-                            vars.insert(var.clone(), *scrut);
+                            vars.insert(var.clone(), scrut.clone());
                         }
                     }
                     let mut args = Vec::new_in(self.cps_bump);
@@ -335,14 +328,18 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                         let mut bmap = BTreeMap::new();
                         for n in set {
                             let id = self.builder.fresh_id();
-                            let matrix =
-                                self.specialize_int(idx, scruts[idx].0, n, worklist.clone());
+                            let matrix = self.specialize_int(
+                                idx,
+                                scruts[idx].0.clone(),
+                                n,
+                                worklist.clone(),
+                            );
                             let body = self.compile_pats(&new_scruts, matrix)?;
                             conts.push((id, vec![in self.cps_bump], &*self.cps_bump.alloc(body)));
                             bmap.insert(n, id);
                         }
                         let default_id = self.builder.fresh_id();
-                        let default = self.default(idx, scruts[idx].0, worklist);
+                        let default = self.default(idx, scruts[idx].0.clone(), worklist);
                         let body = self.compile_pats(&new_scruts, default)?;
                         conts.push((
                             default_id,
@@ -351,8 +348,11 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                         ));
                         Ok(CExp::LetCont(
                             conts,
-                            self.cps_bump
-                                .alloc(CExp::CaseInt(scruts[idx].0, bmap, default_id)),
+                            self.cps_bump.alloc(CExp::CaseInt(
+                                scruts[idx].0.clone(),
+                                bmap,
+                                default_id,
+                            )),
                         ))
                     }
                     typ::Repr::Solved(typ::Expr::Product(_)) => Err(()),
@@ -385,9 +385,9 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
     fn default(
         &mut self,
         idx: usize,
-        scrut: Id,
-        mut worklist: VecDeque<Clause<'typed>>,
-    ) -> std::vec::Vec<Clause<'typed>> {
+        scrut: Val<'cps>,
+        mut worklist: VecDeque<Clause<'typed, 'cps>>,
+    ) -> std::vec::Vec<Clause<'typed, 'cps>> {
         let mut out = std::vec::Vec::new();
         while let Some(clause) = worklist.pop_front() {
             match clause.lhs[idx].inner {
@@ -409,7 +409,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                         ..clause
                     });
                 }
-                PatInner::Wild => out.push(remove_pat(clause, idx, scrut)),
+                PatInner::Wild => out.push(remove_pat(clause, idx, scrut.clone())),
             }
         }
         out
@@ -418,14 +418,14 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
     fn specialize_int(
         &mut self,
         idx: usize,
-        scrut: Id,
+        scrut: Val<'cps>,
         n: i64,
-        mut worklist: VecDeque<Clause<'typed>>,
-    ) -> std::vec::Vec<Clause<'typed>> {
+        mut worklist: VecDeque<Clause<'typed, 'cps>>,
+    ) -> std::vec::Vec<Clause<'typed, 'cps>> {
         let mut out = std::vec::Vec::new();
         while let Some(clause) = worklist.pop_front() {
             match clause.lhs[idx].inner {
-                PatInner::Int(m) if m == n => out.push(remove_pat(clause, idx, scrut)),
+                PatInner::Int(m) if m == n => out.push(remove_pat(clause, idx, scrut.clone())),
                 PatInner::Int(_) => {}
                 PatInner::Or(pat1, pat2) => {
                     let mut lhs = clause.lhs.clone();

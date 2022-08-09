@@ -14,15 +14,21 @@ pub struct BlockName(i32);
 pub struct FnName(i32);
 
 pub enum Instr<'a> {
-    Apply(Register, Register, Register),
+    Apply(Register, Operand<'a>, Operand<'a>),
     Let(Def<'a>),
 }
 
 pub enum Terminator<'a> {
-    CaseInt(Register, BTreeMap<i64, BlockName>, BlockName),
-    Continue(BlockName, Vec<'a, Register>),
-    Return(Register),
-    TailCall(Register, Register),
+    CaseInt(Operand<'a>, BTreeMap<i64, BlockName>, BlockName),
+    Continue(BlockName, Vec<'a, Operand<'a>>),
+    Return(Operand<'a>),
+    TailCall(Operand<'a>, Operand<'a>),
+}
+
+pub enum Operand<'a> {
+    Register(Register),
+    Int(i64),
+    String(String<'a>),
 }
 
 pub struct Def<'a> {
@@ -32,8 +38,6 @@ pub struct Def<'a> {
 
 pub enum Expr<'a> {
     Closure(FnName, Vec<'a, Register>),
-    Int(i64),
-    String(String<'a>),
 }
 
 pub struct Block<'a> {
