@@ -1,3 +1,4 @@
+use crate::stringpool::StringToken;
 use super::ast::{Case, Dec, Exp, Pat, Located};
 use super::lexer::{Error, Token};
 use bumpalo::{Bump, collections::Vec};
@@ -18,7 +19,7 @@ extern {
         "=>" => Token::ThickArrow,
         Id => Token::Var(<&'a str>),
         IntegerLit => Token::IntegerLit(<i64>),
-        StringLit => Token::StringLit(<String>),
+        StringLit => Token::StringLit(<StringToken>),
         "case" => Token::CaseKw,
         "end" => Token::EndKw,
         "fn" => Token::FnKw,
@@ -59,7 +60,7 @@ AppExp: Exp<'a> = {
 
 AtomExp: Exp<'a> = {
     IntegerLit => Exp::Integer(<>),
-    StringLit => Exp::String(bump.alloc(<>)),
+    StringLit => Exp::String(<>),
     Id => Exp::Var(bump.alloc(<>)),
     "fn" <mut cases: Cases> "end" =>
         Exp::Lambda(bump.alloc_slice_fill_iter(cases.drain(..))),

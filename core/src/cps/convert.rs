@@ -3,7 +3,7 @@ use crate::elab::{
     typ,
     typed::{Case, Dec, Exp, Pat, PatInner, Var},
 };
-use bumpalo::{collections::String, vec, Bump};
+use bumpalo::{vec, Bump};
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
@@ -32,14 +32,14 @@ struct Compiler<'typed, 'cps> {
 }
 
 #[derive(Clone)]
-struct Clause<'typed, 'cps> {
+struct Clause<'typed> {
     lhs: std::vec::Vec<&'typed Pat<'typed>>,
     rhs: Id,
-    vars: HashMap<Var<'typed>, Val<'cps>>,
+    vars: HashMap<Var<'typed>, Val>,
     params: Rc<std::vec::Vec<(Var<'typed>, Id)>>,
 }
 
-fn find_irrefutable<'typed, 'cps>(clause: &Clause<'typed, 'cps>) -> Option<usize> {
+fn find_irrefutable<'typed>(clause: &Clause<'typed>) -> Option<usize> {
     for (i, elt) in clause.lhs.iter().enumerate() {
         match elt.inner {
             PatInner::Int(_) => return Some(i),
@@ -63,11 +63,7 @@ fn find_nums<'typed>(out: &mut HashSet<i64>, bump: &'typed Bump, pat: &'typed Pa
     }
 }
 
-fn remove_pat<'typed, 'cps>(
-    clause: Clause<'typed, 'cps>,
-    idx: usize,
-    scrut: Val<'cps>,
-) -> Clause<'typed, 'cps> {
+fn remove_pat<'typed>(clause: Clause<'typed>, idx: usize, scrut: Val) -> Clause<'typed> {
     let mut lhs = clause.lhs.clone();
     lhs.remove(idx);
     let mut vars = clause.vars;
@@ -117,7 +113,7 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
     fn convert_exp(
         &mut self,
         exp: &'typed Exp<'typed>,
-        cont: Box<dyn FnOnce(&mut Self, Val<'cps>) -> Result<CExp<'cps>, ()> + '_>,
+        cont: Box<dyn FnOnce(&mut Self, Val) -> Result<CExp<'cps>, ()> + '_>,
     ) -> Result<CExp<'cps>, ()> {
         match *exp {
             Exp::Apply(exp1, exp2) => {
@@ -241,16 +237,16 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
                     &*self.cps_bump.alloc(dec),
                 ))
             }
-            Exp::String(ref s) => cont(self, Val::String(String::from_str_in(s, self.cps_bump))),
+            Exp::String(ref st) => cont(self, Val::String(*st)),
             Exp::Var(ref v) => cont(self, Val::Id(*self.vars.get(v).unwrap())),
         }
     }
 
     fn convert_clauses(
         &mut self,
-        typs: &[(Val<'cps>, typ::Type)],
+        typs: &[(Val, typ::Type)],
         clauses: &'typed [Case<'typed>],
-        cont: &dyn Fn(Val<'cps>) -> CExp<'cps>,
+        cont: &dyn Fn(Val) -> CExp<'cps>,
     ) -> Result<CExp<'cps>, ()> {
         let mut matrix = std::vec::Vec::new();
         let mut rhss = Vec::new_in(self.cps_bump);
@@ -283,8 +279,8 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
 
     fn compile_pats(
         &mut self,
-        scruts: &[(Val<'cps>, typ::Type)],
-        mut matrix: std::vec::Vec<Clause<'typed, 'cps>>,
+        scruts: &[(Val, typ::Type)],
+        mut matrix: std::vec::Vec<Clause<'typed>>,
     ) -> Result<CExp<'cps>, ()> {
         if matrix.len() == 0 {
             Err(())
@@ -385,9 +381,9 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
     fn default(
         &mut self,
         idx: usize,
-        scrut: Val<'cps>,
-        mut worklist: VecDeque<Clause<'typed, 'cps>>,
-    ) -> std::vec::Vec<Clause<'typed, 'cps>> {
+        scrut: Val,
+        mut worklist: VecDeque<Clause<'typed>>,
+    ) -> std::vec::Vec<Clause<'typed>> {
         let mut out = std::vec::Vec::new();
         while let Some(clause) = worklist.pop_front() {
             match clause.lhs[idx].inner {
@@ -418,10 +414,10 @@ impl<'typed, 'cps> Compiler<'typed, 'cps> {
     fn specialize_int(
         &mut self,
         idx: usize,
-        scrut: Val<'cps>,
+        scrut: Val,
         n: i64,
-        mut worklist: VecDeque<Clause<'typed, 'cps>>,
-    ) -> std::vec::Vec<Clause<'typed, 'cps>> {
+        mut worklist: VecDeque<Clause<'typed>>,
+    ) -> std::vec::Vec<Clause<'typed>> {
         let mut out = std::vec::Vec::new();
         while let Some(clause) = worklist.pop_front() {
             match clause.lhs[idx].inner {

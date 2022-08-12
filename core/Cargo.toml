@@ -7,8 +7,8 @@ build = "build.rs"
 [dependencies]
 bumpalo = { version = "3.9.1", features = ["collections"] }
 lalrpop-util = "0.19.8"
-lexgen = "0.10.0"
-lexgen_util = "0.10.0"
+lexgen = "^0.12"
+lexgen_util = "^0.12"
 
 [build-dependencies]
 lalrpop = { version = "0.19.8", default-features = false }

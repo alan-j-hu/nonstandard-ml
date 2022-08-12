@@ -9,9 +9,9 @@ lalrpop_mod!(parser, "/syntax/parser.rs");
 
 pub type Error<'a> = ParseError<Loc, lexer::Token<'a>, LexerError<lexer::Error<'a>>>;
 
-pub fn parse<'a>(
+pub fn parse<'a, 'b, 'pool>(
     bump: &'a Bump,
-    lexer: lexer::Lexer<'a, impl Iterator<Item = char> + Clone + 'a>,
+    lexer: lexer::Lexer<'a, 'b, 'pool, impl Iterator<Item = char> + Clone + 'a>,
 ) -> Result<ast::Located<ast::Dec<'a>>, Error<'a>> {
     parser::ProgramParser::new().parse(&bump, lexer)
 }
@@ -19,11 +19,14 @@ pub fn parse<'a>(
 #[cfg(test)]
 mod tests {
     use super::{ast, lexer, Error};
+    use crate::stringpool::StringPool;
     use bumpalo::Bump;
 
     fn parse<'a>(bump: &'a Bump, s: &'a str) -> Result<ast::Located<ast::Dec<'a>>, Error<'a>> {
-        let lexer = lexer::Lexer::new(s);
-        super::parse(bump, lexer)
+        let pool_bump = Bump::new();
+        let mut pool = StringPool::new(&pool_bump);
+        let lexer = lexer::Lexer::new_with_state(s, lexer::State::new(&mut pool));
+        super::parse(&bump, lexer)
     }
 
     #[test]

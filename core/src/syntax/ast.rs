@@ -1,3 +1,5 @@
+use crate::stringpool::StringToken;
+
 pub struct Located<T> {
     pub span: (lexgen_util::Loc, lexgen_util::Loc),
     pub node: T,
@@ -16,7 +18,7 @@ pub enum Exp<'a> {
     Integer(i64),
     Lambda(&'a [Case<'a>]),
     Let(&'a Located<Dec<'a>>, &'a Located<Exp<'a>>),
-    String(&'a str),
+    String(StringToken),
     Var(&'a str),
 }
 

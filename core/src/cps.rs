@@ -1,4 +1,5 @@
-use bumpalo::collections::{String, Vec};
+use crate::stringpool::StringToken;
+use bumpalo::collections::Vec;
 use std::collections::BTreeMap;
 
 mod convert;
@@ -8,18 +9,18 @@ pub use convert::convert;
 pub struct Id(i32);
 
 pub enum CExp<'a> {
-    Apply(Val<'a>, Val<'a>, Id),
-    Case(Val<'a>, Vec<'a, ()>),
-    CaseInt(Val<'a>, BTreeMap<i64, Id>, Id),
-    Continue(Id, Vec<'a, Val<'a>>),
+    Apply(Val, Val, Id),
+    Case(Val, Vec<'a, ()>),
+    CaseInt(Val, BTreeMap<i64, Id>, Id),
+    Continue(Id, Vec<'a, Val>),
     Let(&'a ADef<'a>, &'a CExp<'a>),
     LetCont(Vec<'a, (Id, Vec<'a, Id>, &'a CExp<'a>)>, &'a CExp<'a>),
 }
 
-#[derive(Clone)]
-pub enum Val<'a> {
+#[derive(Copy, Clone)]
+pub enum Val {
     Integer(i64),
-    String(String<'a>), // Maybe make this a &str or an Rc<_>
+    String(StringToken),
     Id(Id),
 }
 

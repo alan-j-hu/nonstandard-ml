@@ -1,5 +1,6 @@
 use super::typ::Type;
-use bumpalo::collections::{String, Vec};
+use crate::stringpool::StringToken;
+use bumpalo::collections::Vec;
 
 #[derive(Clone, Eq)]
 pub struct Var<'a> {
@@ -49,7 +50,7 @@ pub enum Exp<'a> {
     Integer(i64),
     Lambda(Type, Vec<'a, Type>, &'a [Case<'a>]),
     Let(&'a Dec<'a>, &'a Exp<'a>),
-    String(String<'a>),
+    String(StringToken),
     Var(Var<'a>),
 }
 

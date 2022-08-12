@@ -1,3 +1,5 @@
+use crate::stringpool::{StringPool, StringToken};
+
 use lexgen::lexer;
 use std::string::String;
 
@@ -13,7 +15,7 @@ pub enum Token<'a> {
     LParen,
     RParen,
     IntegerLit(i64),
-    StringLit(String),
+    StringLit(StringToken),
     Var(&'a str),
     CaseKw,
     EndKw,
@@ -24,13 +26,17 @@ pub enum Token<'a> {
     ValKw,
 }
 
-pub struct State {
+pub struct State<'a, 'pool> {
     buf: String,
+    pool: &'a mut StringPool<'pool>,
 }
 
-impl Default for State {
-    fn default() -> Self {
-        Self { buf: String::new() }
+impl<'a, 'pool> State<'a, 'pool> {
+    pub fn new(pool: &'a mut StringPool<'pool>) -> Self {
+        Self {
+            buf: String::new(),
+            pool,
+        }
     }
 }
 
@@ -40,7 +46,7 @@ pub enum Error<'a> {
 }
 
 lexer! {
-    pub Lexer(State) -> Token<'input>;
+    pub Lexer(State<'a, 'pool>) -> Token<'input>;
 
     type Error = Error<'input>;
 
@@ -80,8 +86,9 @@ lexer! {
 
     rule StringLit {
         '"' => |lexer| {
-            let finished = std::mem::take(&mut lexer.state().buf);
-            lexer.switch_and_return(LexerRule::Init, Token::StringLit(finished))
+            let state = lexer.state();
+            let st = state.pool.intern(&state.buf);
+            lexer.switch_and_return(LexerRule::Init, Token::StringLit(st))
         },
         '\\' _ =? |lexer| {
             match lexer.match_() {

@@ -1,4 +1,5 @@
-use bumpalo::collections::{String, Vec};
+use crate::stringpool::StringToken;
+use bumpalo::collections::Vec;
 use std::collections::BTreeMap;
 
 mod convert;
@@ -14,21 +15,21 @@ pub struct BlockName(i32);
 pub struct FnName(i32);
 
 pub enum Instr<'a> {
-    Apply(Register, Operand<'a>, Operand<'a>),
+    Apply(Register, Operand, Operand),
     Let(Def<'a>),
 }
 
 pub enum Terminator<'a> {
-    CaseInt(Operand<'a>, BTreeMap<i64, BlockName>, BlockName),
-    Continue(BlockName, Vec<'a, Operand<'a>>),
-    Return(Operand<'a>),
-    TailCall(Operand<'a>, Operand<'a>),
+    CaseInt(Operand, BTreeMap<i64, BlockName>, BlockName),
+    Continue(BlockName, Vec<'a, Operand>),
+    Return(Operand),
+    TailCall(Operand, Operand),
 }
 
-pub enum Operand<'a> {
+pub enum Operand {
     Register(Register),
     Int(i64),
-    String(String<'a>),
+    String(StringToken),
 }
 
 pub struct Def<'a> {

@@ -1,7 +1,4 @@
-use bumpalo::{
-    collections::{String, Vec},
-    vec, Bump,
-};
+use bumpalo::{collections::Vec, vec, Bump};
 use std::collections::{BTreeMap, HashMap};
 
 use super::*;
@@ -134,14 +131,10 @@ pub fn compile_fn<'cps, 'ssa>(
     Ok((fun, free_vars))
 }
 
-pub fn convert_val<'cps, 'ssa>(
-    builder: &mut FnBuilder<'ssa>,
-    bump: &'ssa Bump,
-    val: &'cps Val<'cps>,
-) -> Operand<'ssa> {
+pub fn convert_val<'cps, 'ssa>(builder: &mut FnBuilder<'ssa>, val: &'cps Val) -> Operand {
     match val {
         Val::Integer(n) => Operand::Int(*n),
-        Val::String(ref s) => Operand::String(String::from_str_in(s, bump)),
+        Val::String(st) => Operand::String(*st),
         Val::Id(id) => Operand::Register(builder.get_reg(id)),
     }
 }
@@ -155,8 +148,8 @@ pub fn convert<'cps, 'ssa>(
 ) -> Result<Terminator<'ssa>, ()> {
     match exp {
         CExp::Apply(f, x, cont) => {
-            let f = convert_val(builder, bump, f);
-            let x = convert_val(builder, bump, x);
+            let f = convert_val(builder, f);
+            let x = convert_val(builder, x);
             if *cont == builder.ret_addr {
                 Ok(Terminator::TailCall(f, x))
             } else {
@@ -174,7 +167,7 @@ pub fn convert<'cps, 'ssa>(
         }
         CExp::Case(_, _) => todo!(),
         CExp::CaseInt(scrut, cases, default) => {
-            let scrut = convert_val(builder, bump, scrut);
+            let scrut = convert_val(builder, scrut);
             let mut jump_table = BTreeMap::new();
             for (num, cont) in cases {
                 let block = match builder.conts.get(cont) {
@@ -191,7 +184,7 @@ pub fn convert<'cps, 'ssa>(
         }
         CExp::Continue(cont, args) if *cont == builder.ret_addr => {
             if args.len() == 1 {
-                let v = convert_val(builder, bump, &args[0]);
+                let v = convert_val(builder, &args[0]);
                 Ok(Terminator::Return(v))
             } else {
                 Err(())
@@ -204,7 +197,7 @@ pub fn convert<'cps, 'ssa>(
             };
             let mut vals = Vec::new_in(bump);
             for id in args {
-                vals.push(convert_val(builder, bump, id))
+                vals.push(convert_val(builder, id))
             }
             Ok(Terminator::Continue(block, vals))
         }

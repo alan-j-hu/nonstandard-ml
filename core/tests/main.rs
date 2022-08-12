@@ -3,20 +3,25 @@ use nonstandard_ml::{
     cps,
     diagnostic::Error,
     elab, ssa,
+    stringpool::StringPool,
     syntax::{self, lexer},
 };
 use std::fs;
 
 fn test_syntax_fail(y: &str) {
+    let pool_bump = Bump::new();
+    let mut pool = StringPool::new(&pool_bump);
     let program = fs::read_to_string(y).unwrap();
-    let lexer = lexer::Lexer::new(&program);
+    let lexer = lexer::Lexer::new_with_state(&program, lexer::State::new(&mut pool));
     let bump = Bump::new();
     assert!(syntax::parse(&bump, lexer).is_err())
 }
 
 fn test_typecheck_fail(y: &str) {
+    let pool_bump = Bump::new();
+    let mut pool = StringPool::new(&pool_bump);
     let program = fs::read_to_string(y).unwrap();
-    let lexer = lexer::Lexer::new(&program);
+    let lexer = lexer::Lexer::new_with_state(&program, lexer::State::new(&mut pool));
     let bump = Bump::new();
     let dec = syntax::parse(&bump, lexer).unwrap();
     let typed = Bump::new();
@@ -24,8 +29,10 @@ fn test_typecheck_fail(y: &str) {
 }
 
 fn test_pass(y: &str) {
+    let pool_bump = Bump::new();
+    let mut pool = StringPool::new(&pool_bump);
     let program = fs::read_to_string(y).unwrap();
-    let lexer = lexer::Lexer::new(&program);
+    let lexer = lexer::Lexer::new_with_state(&program, lexer::State::new(&mut pool));
     let bump = Bump::new();
     let dec = syntax::parse(&bump, lexer).unwrap();
     let typed = Bump::new();

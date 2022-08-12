@@ -1,8 +1,5 @@
 use super::syntax::ast;
-use bumpalo::{
-    collections::{String, Vec},
-    vec, Bump,
-};
+use bumpalo::{collections::Vec, vec, Bump};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
@@ -147,9 +144,9 @@ impl Elaborator {
                 self.typ_builder.pop_level();
                 Ok(typed::Exp::Let(bump.alloc(dec), bump.alloc(exp)))
             }
-            ast::Exp::String(s) => match typ.unify(self.typ_builder.solved(typ::Expr::String)) {
+            ast::Exp::String(st) => match typ.unify(self.typ_builder.solved(typ::Expr::String)) {
                 Err(_) => Err(()),
-                Ok(()) => Ok(typed::Exp::String(String::from_str_in(s, bump))),
+                Ok(()) => Ok(typed::Exp::String(st)),
             },
             ast::Exp::Var(v) => match ctx.scope.vals.get(v) {
                 None => Err(()),
