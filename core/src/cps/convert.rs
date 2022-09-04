@@ -19,27 +19,25 @@ pub fn convert<'cps, 'typed: 'cps>(
         cps_bump,
         vars: HashMap::new(),
     };
-    let (vars, dec) = compiler.convert_dec(dec);
     let ret_id = compiler.builder.fresh_id();
-    let cont_id = compiler.builder.fresh_id();
     let box_id = compiler.builder.fresh_id();
-    let vals = Vec::from_iter_in(vars.iter().map(|x| Val::Id(*x)), compiler.cps_bump);
-    Ok((
-        ret_id,
-        CExp::LetCont(
-            vec![in compiler.cps_bump; (cont_id, vars, &*compiler.cps_bump.alloc(
-                CExp::Let(
-                    &*compiler.cps_bump.alloc(ADef {
-                        id: box_id,
-                        exp: AExp::Box(0, vals),
-                    }),
-                    &*compiler.cps_bump.alloc(CExp::Continue(
-                    ret_id, vec![in compiler.cps_bump; Val::Id(box_id)])))
-                )
-            )],
-            &*compiler.cps_bump.alloc(dec(&mut compiler, cont_id)?),
-        ),
-    ))
+    let exp = compiler.convert_dec(
+        dec,
+        Box::new(|comp| {
+            let vals = Vec::new_in(comp.cps_bump);
+            Ok(CExp::Let(
+                &*compiler.cps_bump.alloc(ADef {
+                    id: box_id,
+                    exp: AExp::Box(0, vals),
+                }),
+                &*compiler.cps_bump.alloc(CExp::Continue(
+                    ret_id,
+                    vec![in compiler.cps_bump; Val::Id(box_id)],
+                )),
+            ))
+        }),
+    )?;
+    Ok((ret_id, exp))
 }
 
 struct Compiler<'typed, 'cps> {
@@ -100,52 +98,35 @@ impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
     fn convert_dec<'s>(
         &'s mut self,
         dec: &'typed Dec<'typed>,
-    ) -> (
-        Vec<'cps, Id>,
-        Box<dyn for<'a> FnOnce(&'a mut Self, Id) -> Result<CExp<'cps>, ()> + 'cps>,
-    ) {
+        cont: Box<dyn for<'a> FnOnce(&'a mut Self) -> Result<CExp<'cps>, ()> + '_>,
+    ) -> Result<CExp<'cps>, ()> {
         match dec {
             Dec::And(dec1, dec2) | Dec::Loc(dec1, dec2) | Dec::Seq(dec1, dec2) => {
-                let (vars1, dec1) = self.convert_dec(dec1);
-                let (vars2, dec2) = self.convert_dec(dec2);
-                let mut v = vars1.clone();
-                v.append(&mut vars2.clone());
-                (
-                    v,
-                    Box::new(move |comp, id| {
-                        let id2 = comp.builder.fresh_id();
-                        Ok(CExp::LetCont(
-                            vec![in comp.cps_bump; (id2, vars2, &*comp.cps_bump.alloc(dec2(comp, id)?))],
-                            &*comp.cps_bump.alloc(dec1(comp, id2)?),
-                        ))
-                    }),
-                )
+                self.convert_dec(dec1, Box::new(|comp| comp.convert_dec(dec2, cont)))
             }
             Dec::Val(typ, pat, exp) => {
                 let mut params = std::vec::Vec::new();
                 self.gather_bindings(pat, &mut params);
-                let mut v: Vec<Id> = Vec::new_in(self.cps_bump);
+                let mut vars: Vec<Id> = Vec::new_in(self.cps_bump);
                 for (_, id) in &params {
-                    v.push(*id)
+                    vars.push(*id)
                 }
-                (
-                    v,
-                    Box::new(|comp, id| {
-                        let mut matrix = std::vec::Vec::new();
-                        matrix.push(Clause {
-                            lhs: std::vec![pat],
-                            rhs: id,
-                            vars: HashMap::new(),
-                            params: Rc::new(params),
-                        });
-                        comp.convert_exp(
-                            exp,
-                            Box::new(|comp, scrut| {
-                                comp.compile_pats(&[(scrut, typ.clone())], matrix)
-                            }),
-                        )
-                    }),
-                )
+                let cont_id = self.builder.fresh_id();
+                let mut matrix = std::vec::Vec::new();
+                matrix.push(Clause {
+                    lhs: std::vec![pat],
+                    rhs: cont_id,
+                    vars: HashMap::new(),
+                    params: Rc::new(params),
+                });
+                Ok(CExp::LetCont(
+                    vec![in self.cps_bump;
+                         (cont_id, vars, &*self.cps_bump.alloc(cont(self)?))],
+                    &*self.cps_bump.alloc(self.convert_exp(
+                        exp,
+                        Box::new(|comp, scrut| comp.compile_pats(&[(scrut, typ.clone())], matrix)),
+                    )?),
+                ))
             }
         }
     }
@@ -269,13 +250,7 @@ impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
                 ))
             }
             Exp::Let(dec, exp) => {
-                let (vars, f) = self.convert_dec(dec);
-                let cont_id = self.builder.fresh_id();
-                Ok(CExp::LetCont(
-                    vec![in self.cps_bump;
-                         (cont_id, vars, &*self.cps_bump.alloc(self.convert_exp(exp, cont)?))],
-                    &*self.cps_bump.alloc(f(self, cont_id)?),
-                ))
+                self.convert_dec(dec, Box::new(|comp| comp.convert_exp(exp, cont)))
             }
             Exp::String(ref st) => cont(self, Val::String(*st)),
             Exp::Var(ref v) => cont(self, Val::Id(*self.vars.get(v).unwrap())),
