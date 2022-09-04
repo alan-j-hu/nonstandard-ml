@@ -3,12 +3,13 @@ use std::collections::{BTreeMap, HashMap};
 
 use super::*;
 use crate::cps::{AExp, CExp, Id, Lambda, Val};
+use crate::diagnostic::Error;
 
-pub fn compile<'cps, 'ssa>(
+pub fn compile<'cps, 'ssa, 'any>(
     bump: &'ssa Bump,
     ret_addr: Id,
     exp: &'cps CExp<'cps>,
-) -> Result<Program<'ssa>, ()> {
+) -> Result<Program<'ssa>, Error<'any>> {
     let mut ctx = Context {
         fn_counter: 0,
         fns: BTreeMap::new(),
@@ -101,11 +102,11 @@ impl<'ssa> FnBuilder<'ssa> {
     }
 }
 
-pub fn compile_fn<'cps, 'ssa>(
+pub fn compile_fn<'cps, 'ssa, 'any>(
     ctx: &mut Context<'ssa>,
     bump: &'ssa Bump,
     lam: &'cps Lambda<'cps>,
-) -> Result<(Fn<'ssa>, std::vec::Vec<Id>), ()> {
+) -> Result<(Fn<'ssa>, std::vec::Vec<Id>), Error<'any>> {
     let mut instrs = Vec::new_in(bump);
     let mut builder = FnBuilder::new(lam.ret_addr);
     let param = builder.fresh_register();
@@ -139,13 +140,13 @@ pub fn convert_val<'cps, 'ssa>(builder: &mut FnBuilder<'ssa>, val: &'cps Val) ->
     }
 }
 
-pub fn convert<'cps, 'ssa>(
+pub fn convert<'cps, 'ssa, 'any>(
     ctx: &mut Context<'ssa>,
     bump: &'ssa Bump,
     builder: &mut FnBuilder<'ssa>,
     out: &mut Vec<'ssa, Instr<'ssa>>,
     exp: &'cps CExp<'cps>,
-) -> Result<Terminator<'ssa>, ()> {
+) -> Result<Terminator<'ssa>, Error<'any>> {
     match exp {
         CExp::Apply(f, x, cont) => {
             let f = convert_val(builder, f);
@@ -187,12 +188,15 @@ pub fn convert<'cps, 'ssa>(
                 let v = convert_val(builder, &args[0]);
                 Ok(Terminator::Return(v))
             } else {
-                Err(())
+                Err(Error::Internal(format!(
+                    "Expected one cont arg, got {:?}",
+                    args.len()
+                )))
             }
         }
         CExp::Continue(cont, args) => {
             let block = match builder.conts.get(cont) {
-                None => return Err(()),
+                None => return Err(Error::Internal(format!("Cont {:?} not found", cont))),
                 Some(block) => *block,
             };
             let mut vals = Vec::new_in(bump);

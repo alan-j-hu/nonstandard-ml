@@ -1,4 +1,5 @@
 use super::syntax::ast;
+use crate::diagnostic::Error;
 use bumpalo::{collections::Vec, vec, Bump};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -7,10 +8,10 @@ pub mod ctx;
 pub mod typ;
 pub mod typed;
 
-pub fn elab<'ast, 'typed>(
+pub fn elab<'ast, 'typed, 'any>(
     bump: &'typed Bump,
     dec: &'ast ast::Located<ast::Dec<'ast>>,
-) -> Result<(ctx::Scope<'ast, 'typed>, typed::Dec<'typed>), ()> {
+) -> Result<(ctx::Scope<'ast, 'typed>, typed::Dec<'typed>), Error<'any>> {
     let mut elab = Elaborator::new();
     let scope = ctx::Scope::new();
     let ctx = ctx::Ctx::new(&scope);
@@ -28,19 +29,19 @@ impl Elaborator {
         Self::default()
     }
 
-    fn elab_dec<'a, 'ast, 'typed>(
+    fn elab_dec<'a, 'ast, 'typed, 'any>(
         &mut self,
         bump: &'typed Bump,
         ctx: &ctx::Ctx<'a, 'ast, 'typed>,
         dec: &'ast ast::Located<ast::Dec<'ast>>,
-    ) -> Result<(ctx::Scope<'ast, 'typed>, typed::Dec<'typed>), ()> {
+    ) -> Result<(ctx::Scope<'ast, 'typed>, typed::Dec<'typed>), Error<'any>> {
         match dec.node {
             ast::Dec::And(dec1, dec2) => {
                 let (scope1, dec1) = self.elab_dec(bump, ctx, dec1)?;
                 let (mut scope2, dec2) = self.elab_dec(bump, ctx, dec2)?;
                 for (k, v) in scope1.vals.iter() {
                     match scope2.vals.entry(k) {
-                        Entry::Occupied(_) => return Err(()),
+                        Entry::Occupied(_) => return Err(Error::Internal("".to_string())),
                         Entry::Vacant(va) => {
                             va.insert(v.clone());
                         }
@@ -83,13 +84,13 @@ impl Elaborator {
         }
     }
 
-    fn elab_exp<'a, 'ast, 'typed>(
+    fn elab_exp<'a, 'ast, 'typed, 'any>(
         &mut self,
         bump: &'typed Bump,
         ctx: &ctx::Ctx<'a, 'ast, 'typed>,
         exp: &'ast ast::Located<ast::Exp<'ast>>,
         typ: typ::Type,
-    ) -> Result<typed::Exp<'typed>, ()> {
+    ) -> Result<typed::Exp<'typed>, Error<'any>> {
         match exp.node {
             ast::Exp::Apply(exp1, exp2) => {
                 let dom = self.typ_builder.unsolved();
@@ -107,12 +108,12 @@ impl Elaborator {
                 Ok(typed::Exp::Case(from, bump.alloc(exp), cases))
             }
             ast::Exp::Integer(n) => match typ.unify(self.typ_builder.solved(typ::Expr::Integer)) {
-                Err(_) => Err(()),
+                Err(_) => Err(Error::Internal("Not an int".to_string())),
                 Ok(()) => Ok(typed::Exp::Integer(n)),
             },
             ast::Exp::Lambda(cases) => {
                 if cases.len() == 0 {
-                    Err(())
+                    Err(Error::Internal("Empty lambda".to_string()))
                 } else {
                     let dom = self.typ_builder.unsolved();
                     let mut doms = Vec::new_in(bump);
@@ -131,7 +132,7 @@ impl Elaborator {
                         .solved(typ::Expr::Arrow(dom.clone(), arr.clone()));
                     match typ.unify(arr) {
                         Ok(()) => {}
-                        Err(_) => return Err(()),
+                        Err(_) => return Err(Error::Internal("".to_string())),
                     }
                     let cases = self.elab_cases(bump, ctx, cases, &dom, &doms, codom)?;
                     Ok(typed::Exp::Lambda(dom, doms, cases))
@@ -145,20 +146,20 @@ impl Elaborator {
                 Ok(typed::Exp::Let(bump.alloc(dec), bump.alloc(exp)))
             }
             ast::Exp::String(st) => match typ.unify(self.typ_builder.solved(typ::Expr::String)) {
-                Err(_) => Err(()),
+                Err(_) => Err(Error::Internal("Not a sfring".to_string())),
                 Ok(()) => Ok(typed::Exp::String(st)),
             },
             ast::Exp::Var(v) => match ctx.scope.vals.get(v) {
-                None => Err(()),
+                None => Err(Error::Internal("".to_string())),
                 Some((var, vtyp)) => match typ.unify(self.typ_builder.inst(&vtyp)) {
                     Ok(()) => Ok(typed::Exp::Var(var.clone())),
-                    Err(_) => Err(()),
+                    Err(_) => Err(Error::Internal("Var not found".to_string())),
                 },
             },
         }
     }
 
-    fn elab_cases<'a, 'ast, 'typed>(
+    fn elab_cases<'a, 'ast, 'typed, 'any>(
         &mut self,
         bump: &'typed Bump,
         ctx: &ctx::Ctx<'a, 'ast, 'typed>,
@@ -166,7 +167,7 @@ impl Elaborator {
         from: &typ::Type,
         froms: &Vec<typ::Type>,
         to: typ::Type,
-    ) -> Result<&'typed [typed::Case<'typed>], ()> {
+    ) -> Result<&'typed [typed::Case<'typed>], Error<'any>> {
         let mut vec = vec![in bump];
         for ast::Case { pat, pats, rhs } in cases {
             let mut vals = HashMap::new();
@@ -185,24 +186,24 @@ impl Elaborator {
                     rhs,
                 })
             } else {
-                return Err(());
+                return Err(Error::Internal("Case row length is wrong".to_string()));
             }
         }
         Ok(bump.alloc_slice_fill_iter(vec.drain(..)))
     }
 
-    fn rename_pat<'ast, 'typed>(
+    fn rename_pat<'ast, 'typed, 'any>(
         &mut self,
         bump: &'typed Bump,
         out: &mut HashMap<&'ast str, (typed::Var<'typed>, typ::Type)>,
         pat: &'ast ast::Located<ast::Pat<'ast>>,
         typ: typ::Type,
-    ) -> Result<typed::Pat<'typed>, ()> {
+    ) -> Result<typed::Pat<'typed>, Error<'any>> {
         match pat.node {
             ast::Pat::As(name, pat) => {
                 let mut pat = self.rename_pat(bump, out, pat, typ.clone())?;
                 match out.entry(name) {
-                    Entry::Occupied(_) => Err(()),
+                    Entry::Occupied(_) => Err(Error::Internal("Redefined".to_string())),
                     Entry::Vacant(va) => {
                         let var = self.var_builder.fresh(bump.alloc_str(name));
                         va.insert((var.clone(), typ));
@@ -221,7 +222,7 @@ impl Elaborator {
                 let pat2 = self.check_names_same(bump, &mut names, pat2, typ)?;
                 for (k, v) in map.iter() {
                     match out.entry(k) {
-                        Entry::Occupied(_) => return Err(()),
+                        Entry::Occupied(_) => return Err(Error::Internal("Redefined".to_string())),
                         Entry::Vacant(va) => {
                             va.insert(v.clone());
                         }
@@ -233,7 +234,7 @@ impl Elaborator {
                 })
             }
             ast::Pat::Var(name) => match out.entry(name) {
-                Entry::Occupied(_) => Err(()),
+                Entry::Occupied(_) => Err(Error::Internal("Redefined".to_string())),
                 Entry::Vacant(va) => {
                     let var = self.var_builder.fresh(bump.alloc_str(name));
                     va.insert((var.clone(), typ));
@@ -250,29 +251,29 @@ impl Elaborator {
         }
     }
 
-    fn check_names_same<'ast, 'typed>(
+    fn check_names_same<'ast, 'typed, 'any>(
         &self,
         bump: &'typed Bump,
         names: &mut HashMap<&'ast str, (typed::Var<'typed>, typ::Type, bool)>,
         pat: &'ast ast::Located<ast::Pat<'ast>>,
         typ: typ::Type,
-    ) -> Result<typed::Pat<'typed>, ()> {
+    ) -> Result<typed::Pat<'typed>, Error<'any>> {
         let pat = self.remap_pat(bump, names, pat, typ)?;
         for (_k, (_, _, avail)) in names.iter() {
             if *avail {
-                return Err(());
+                return Err(Error::Internal("".to_string()));
             }
         }
         Ok(pat)
     }
 
-    fn remap_pat<'ast, 'typed>(
+    fn remap_pat<'ast, 'typed, 'any>(
         &self,
         bump: &'typed Bump,
         names: &mut HashMap<&'ast str, (typed::Var<'typed>, typ::Type, bool)>,
         pat: &'ast ast::Located<ast::Pat<'ast>>,
         typ: typ::Type,
-    ) -> Result<typed::Pat<'typed>, ()> {
+    ) -> Result<typed::Pat<'typed>, Error<'any>> {
         match pat.node {
             ast::Pat::As(name, pat) => {
                 let mut pat = self.remap_pat(bump, names, pat, typ.clone())?;
@@ -286,13 +287,13 @@ impl Elaborator {
                                     pat.vars.push(var.clone());
                                     Ok(pat)
                                 }
-                                Err(_) => Err(()),
+                                Err(_) => Err(Error::Internal("".to_string())),
                             }
                         } else {
-                            Err(())
+                            Err(Error::Internal("".to_string()))
                         }
                     }
-                    Entry::Vacant(_) => Err(()),
+                    Entry::Vacant(_) => Err(Error::Internal("".to_string())),
                 }
             }
             ast::Pat::Or(pat1, pat2) => {
@@ -318,13 +319,13 @@ impl Elaborator {
                                 inner: typed::PatInner::Wild,
                                 vars: vec![in bump; var.clone()],
                             }),
-                            Err(_) => Err(()),
+                            Err(_) => Err(Error::Internal("".to_string())),
                         }
                     } else {
-                        Err(())
+                        Err(Error::Internal("".to_string()))
                     }
                 }
-                Entry::Vacant(_) => Err(()),
+                Entry::Vacant(_) => Err(Error::Internal("".to_string())),
             },
             ast::Pat::Wild => Ok(typed::Pat {
                 inner: typed::PatInner::Wild,

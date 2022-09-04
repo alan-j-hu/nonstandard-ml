@@ -21,7 +21,7 @@ fn compile<'a>(program: &'a str, bump: &'a Bump) -> Result<(), Error<'a>> {
     let lexer = lexer::Lexer::new_with_state(&program, lexer::State::new(&mut pool));
     let dec = syntax::parse(bump, lexer).map_err(|e| Error::Syntax(e))?;
     let typed = Bump::new();
-    let _ = elab::elab(&typed, &dec).map_err(|_| Error::Elab)?;
+    let _ = elab::elab(&typed, &dec)?;
     drop(dec);
     Ok(())
 }
@@ -39,8 +39,8 @@ fn main() {
                 Err(Error::Syntax(_)) => {
                     eprintln!("Syntax error")
                 }
-                Err(Error::Elab) => {
-                    eprintln!("Type error")
+                Err(Error::Internal(ref s)) => {
+                    eprintln!("{}", s)
                 }
             }
         }

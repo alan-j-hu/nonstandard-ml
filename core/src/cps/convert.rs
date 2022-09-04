@@ -1,4 +1,5 @@
 use super::*;
+use crate::diagnostic::Error;
 use crate::elab::{
     typ,
     typed::{Case, Dec, Exp, Pat, PatInner, Var},
@@ -8,11 +9,11 @@ use std::collections::VecDeque;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-pub fn convert<'cps, 'typed: 'cps>(
+pub fn convert<'cps, 'typed: 'cps, 'any>(
     typed_bump: &'typed Bump,
     cps_bump: &'cps Bump,
     dec: &'typed Dec<'typed>,
-) -> Result<(Id, CExp<'cps>), ()> {
+) -> Result<(Id, CExp<'cps>), Error<'any>> {
     let mut compiler = Compiler {
         builder: Builder::new(),
         typed_bump,
@@ -95,11 +96,11 @@ fn remove_pat<'typed>(clause: Clause<'typed>, idx: usize, scrut: Val) -> Clause<
 }
 
 impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
-    fn convert_dec<'s>(
+    fn convert_dec<'s, 'any>(
         &'s mut self,
         dec: &'typed Dec<'typed>,
-        cont: Box<dyn for<'a> FnOnce(&'a mut Self) -> Result<CExp<'cps>, ()> + '_>,
-    ) -> Result<CExp<'cps>, ()> {
+        cont: Box<dyn for<'a> FnOnce(&'a mut Self) -> Result<CExp<'cps>, Error<'any>> + '_>,
+    ) -> Result<CExp<'cps>, Error<'any>> {
         match dec {
             Dec::And(dec1, dec2) | Dec::Loc(dec1, dec2) | Dec::Seq(dec1, dec2) => {
                 self.convert_dec(dec1, Box::new(|comp| comp.convert_dec(dec2, cont)))
@@ -131,11 +132,11 @@ impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
         }
     }
 
-    fn convert_exp(
+    fn convert_exp<'any>(
         &mut self,
         exp: &'typed Exp<'typed>,
-        cont: Box<dyn FnOnce(&mut Self, Val) -> Result<CExp<'cps>, ()> + '_>,
-    ) -> Result<CExp<'cps>, ()> {
+        cont: Box<dyn FnOnce(&mut Self, Val) -> Result<CExp<'cps>, Error<'any>> + '_>,
+    ) -> Result<CExp<'cps>, Error<'any>> {
         match *exp {
             Exp::Apply(exp1, exp2) => {
                 let cont_id = self.builder.fresh_id();
@@ -180,7 +181,7 @@ impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
             Exp::Integer(n) => cont(self, Val::Integer(n)),
             Exp::Lambda(ref dom, ref doms, clauses) => {
                 if clauses.len() == 0 {
-                    return Err(()); // Handle empty type later
+                    return Err(Error::Internal("Empty clauses".to_string())); // Handle empty type later
                 }
                 // NOTE: The number of patterns in a clause is not necessarily
                 // the same as the number of arrows in the type!
@@ -257,12 +258,12 @@ impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
         }
     }
 
-    fn convert_clauses(
+    fn convert_clauses<'any>(
         &mut self,
         typs: &[(Val, typ::Type)],
         clauses: &'typed [Case<'typed>],
         cont: &dyn Fn(Val) -> CExp<'cps>,
-    ) -> Result<CExp<'cps>, ()> {
+    ) -> Result<CExp<'cps>, Error<'any>> {
         let mut matrix = std::vec::Vec::new();
         let mut rhss = Vec::new_in(self.cps_bump);
         for Case { pat, pats, rhs } in clauses {
@@ -292,13 +293,13 @@ impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
         ))
     }
 
-    fn compile_pats(
+    fn compile_pats<'any>(
         &mut self,
         scruts: &[(Val, typ::Type)],
         mut matrix: std::vec::Vec<Clause<'typed>>,
-    ) -> Result<CExp<'cps>, ()> {
+    ) -> Result<CExp<'cps>, Error<'any>> {
         if matrix.len() == 0 {
-            Err(())
+            Err(Error::Internal("Empty matrix".to_string()))
         } else {
             match find_irrefutable(&matrix[0]) {
                 None => {
@@ -321,8 +322,10 @@ impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
                     Ok(CExp::Continue(rhs, args))
                 }
                 Some(idx) => match scruts[idx].1.find() {
-                    typ::Repr::Unsolved(_) => Err(()),
-                    typ::Repr::Solved(typ::Expr::Arrow(_, _)) => Err(()),
+                    typ::Repr::Unsolved(_) => Err(Error::Internal("Unsolved".to_string())),
+                    typ::Repr::Solved(typ::Expr::Arrow(_, _)) => {
+                        Err(Error::Internal("Can't match on arrow type".to_string()))
+                    }
                     typ::Repr::Solved(typ::Expr::Integer) => {
                         let mut set = HashSet::new();
                         for clause in &matrix {
@@ -366,8 +369,12 @@ impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
                             )),
                         ))
                     }
-                    typ::Repr::Solved(typ::Expr::Product(_)) => Err(()),
-                    typ::Repr::Solved(typ::Expr::String) => Err(()),
+                    typ::Repr::Solved(typ::Expr::Product(_)) => {
+                        Err(Error::Internal("Todo product".to_string()))
+                    }
+                    typ::Repr::Solved(typ::Expr::String) => {
+                        Err(Error::Internal("Todo string".to_string()))
+                    }
                 },
             }
         }

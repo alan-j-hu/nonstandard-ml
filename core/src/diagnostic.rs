@@ -1,6 +1,7 @@
 use super::syntax;
 
+#[derive(Debug)]
 pub enum Error<'a> {
     Syntax(syntax::Error<'a>),
-    Elab,
+    Internal(String),
 }
