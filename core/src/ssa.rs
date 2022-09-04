@@ -38,6 +38,7 @@ pub struct Def<'a> {
 }
 
 pub enum Expr<'a> {
+    Box(u64, Vec<'a, Operand>),
     Closure(FnName, Vec<'a, Register>),
 }
 

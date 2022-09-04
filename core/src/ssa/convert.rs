@@ -204,6 +204,13 @@ pub fn convert<'cps, 'ssa>(
         CExp::Let(def, cont) => {
             let register = builder.fresh_register();
             let expr = match def.exp {
+                AExp::Box(tag, ref subterms) => {
+                    let mut new_subterms = Vec::with_capacity_in(subterms.len(), bump);
+                    for subterm in subterms {
+                        new_subterms.push(convert_val(builder, subterm))
+                    }
+                    Expr::Box(tag, new_subterms)
+                }
                 AExp::Lambda(ref lam) => {
                     let (fun, free_vars) = compile_fn(ctx, bump, lam)?;
                     let fn_name = ctx.add_fn(fun);

@@ -30,6 +30,7 @@ pub struct ADef<'a> {
 }
 
 pub enum AExp<'a> {
+    Box(u64, Vec<'a, Val>),
     Lambda(Lambda<'a>),
 }
 

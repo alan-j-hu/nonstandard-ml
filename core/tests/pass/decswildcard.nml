@@ -1,0 +1,2 @@
+val x = (fn x => x end)
+val _ = x

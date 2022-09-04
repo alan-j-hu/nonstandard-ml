@@ -2,7 +2,7 @@ use super::typ::Type;
 use crate::stringpool::StringToken;
 use bumpalo::collections::Vec;
 
-#[derive(Clone, Eq)]
+#[derive(Clone, Copy, Eq)]
 pub struct Var<'a> {
     id: usize,
     name: &'a str,

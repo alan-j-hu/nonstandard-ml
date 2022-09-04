@@ -42,6 +42,12 @@ pub Program: Located<Dec<'a>> = {
 }
 
 Dec: Dec<'a> = {
+    <dec1: Loc<Dec>> <dec2: Loc<SubDec>> =>
+        Dec::Seq(bump.alloc(dec1), bump.alloc(dec2)),
+    <SubDec>,
+}
+
+SubDec: Dec<'a> = {
     "val" <pat: Loc<Pat>> "=" <exp: Loc<Exp>> =>
         Dec::Val(bump.alloc(pat), bump.alloc(exp)),
 }
