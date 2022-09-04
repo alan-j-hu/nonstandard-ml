@@ -36,11 +36,8 @@ fn main() {
             let bump = Bump::new();
             match compile(&program, &bump) {
                 Ok(()) => {}
-                Err(Error::Syntax(_)) => {
-                    eprintln!("Syntax error")
-                }
-                Err(Error::Internal(ref s)) => {
-                    eprintln!("{}", s)
+                Err(ref e) => {
+                    eprintln!("{:?}", e)
                 }
             }
         }

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::cmp::{Ord, Ordering};
 use std::rc::Rc;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Level {
     Nat(i32),
     Omega,
@@ -25,7 +25,7 @@ impl PartialOrd for Level {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Var {
     level: Level,
     id: i32,
@@ -64,7 +64,7 @@ impl Var {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum State {
     Parent(Type),
     Solved(Expr<Type>),
@@ -138,7 +138,7 @@ impl Builder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Type {
     inner: Rc<RefCell<State>>,
 }
@@ -265,7 +265,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Expr<T> {
     Arrow(T, T),
     Integer,
@@ -273,6 +273,7 @@ pub enum Expr<T> {
     String,
 }
 
+#[derive(Debug)]
 pub enum Diff {
     Same(Type),
     Diff(Type, Type),

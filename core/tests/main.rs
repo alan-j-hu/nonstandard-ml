@@ -1,8 +1,6 @@
 use bumpalo::Bump;
 use nonstandard_ml::{
-    cps,
-    diagnostic::Error,
-    elab, ssa,
+    cps, elab, ssa,
     stringpool::StringPool,
     syntax::{self, lexer},
 };

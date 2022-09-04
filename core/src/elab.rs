@@ -24,6 +24,10 @@ pub struct Elaborator {
     typ_builder: typ::Builder,
 }
 
+fn unify<'any>(actual: typ::Type, expected: typ::Type) -> Result<(), Error<'any>> {
+    actual.unify(expected).map_err(Error::Unify)
+}
+
 impl Elaborator {
     fn new() -> Self {
         Self::default()
@@ -41,7 +45,7 @@ impl Elaborator {
                 let (mut scope2, dec2) = self.elab_dec(bump, ctx, dec2)?;
                 for (k, v) in scope1.vals.iter() {
                     match scope2.vals.entry(k) {
-                        Entry::Occupied(_) => return Err(Error::Internal("".to_string())),
+                        Entry::Occupied(_) => return Err(Error::RedefinedVar(k.to_string())),
                         Entry::Vacant(va) => {
                             va.insert(v.clone());
                         }
@@ -107,10 +111,10 @@ impl Elaborator {
                 let cases = self.elab_cases(bump, ctx, cases, &from, &vec![in bump], typ)?;
                 Ok(typed::Exp::Case(from, bump.alloc(exp), cases))
             }
-            ast::Exp::Integer(n) => match typ.unify(self.typ_builder.solved(typ::Expr::Integer)) {
-                Err(_) => Err(Error::Internal("Not an int".to_string())),
-                Ok(()) => Ok(typed::Exp::Integer(n)),
-            },
+            ast::Exp::Integer(n) => {
+                unify(self.typ_builder.solved(typ::Expr::Integer), typ)?;
+                Ok(typed::Exp::Integer(n))
+            }
             ast::Exp::Lambda(cases) => {
                 if cases.len() == 0 {
                     Err(Error::Internal("Empty lambda".to_string()))
@@ -130,10 +134,7 @@ impl Elaborator {
                     arr = self
                         .typ_builder
                         .solved(typ::Expr::Arrow(dom.clone(), arr.clone()));
-                    match typ.unify(arr) {
-                        Ok(()) => {}
-                        Err(_) => return Err(Error::Internal("".to_string())),
-                    }
+                    unify(arr, typ)?;
                     let cases = self.elab_cases(bump, ctx, cases, &dom, &doms, codom)?;
                     Ok(typed::Exp::Lambda(dom, doms, cases))
                 }
@@ -145,16 +146,16 @@ impl Elaborator {
                 self.typ_builder.pop_level();
                 Ok(typed::Exp::Let(bump.alloc(dec), bump.alloc(exp)))
             }
-            ast::Exp::String(st) => match typ.unify(self.typ_builder.solved(typ::Expr::String)) {
-                Err(_) => Err(Error::Internal("Not a sfring".to_string())),
-                Ok(()) => Ok(typed::Exp::String(st)),
-            },
+            ast::Exp::String(st) => {
+                unify(self.typ_builder.solved(typ::Expr::String), typ)?;
+                Ok(typed::Exp::String(st))
+            }
             ast::Exp::Var(v) => match ctx.scope.vals.get(v) {
-                None => Err(Error::Internal("".to_string())),
-                Some((var, vtyp)) => match typ.unify(self.typ_builder.inst(&vtyp)) {
-                    Ok(()) => Ok(typed::Exp::Var(var.clone())),
-                    Err(_) => Err(Error::Internal("Var not found".to_string())),
-                },
+                None => Err(Error::UnboundVar(v.to_string())),
+                Some((var, vtyp)) => {
+                    unify(self.typ_builder.inst(&vtyp), typ)?;
+                    Ok(typed::Exp::Var(var.clone()))
+                }
             },
         }
     }
