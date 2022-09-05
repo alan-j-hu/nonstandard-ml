@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-pub fn convert<'cps, 'typed: 'cps, 'any>(
+pub fn convert<'cps, 'typed, 'any>(
     typed_bump: &'typed Bump,
     cps_bump: &'cps Bump,
     dec: &'typed Dec<'typed>,
@@ -95,7 +95,7 @@ fn remove_pat<'typed>(clause: Clause<'typed>, idx: usize, scrut: Val) -> Clause<
     }
 }
 
-impl<'cps, 'typed: 'cps> Compiler<'typed, 'cps> {
+impl<'cps, 'typed> Compiler<'typed, 'cps> {
     fn convert_dec<'s, 'any>(
         &'s mut self,
         dec: &'typed Dec<'typed>,

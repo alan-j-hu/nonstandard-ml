@@ -38,6 +38,7 @@ fn test_pass(y: &str) {
     drop(bump);
     let cps = Bump::new();
     let (ret_addr, cexp) = cps::convert(&typed, &cps, &dec).unwrap();
+    drop(typed);
     let ssa = Bump::new();
     ssa::compile(&ssa, ret_addr, &cexp).unwrap();
 }
