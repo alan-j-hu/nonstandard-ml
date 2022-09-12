@@ -3,15 +3,16 @@ use bumpalo::collections::Vec;
 use std::collections::BTreeMap;
 
 mod convert;
+pub mod liveness;
 pub use convert::compile;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Register(i32);
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockName(i32);
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FnName(i32);
 
 pub enum Instr<'a> {
@@ -52,6 +53,7 @@ pub struct Fn<'a> {
     pub param: Register,
     pub blocks: BTreeMap<BlockName, Block<'a>>,
     pub entry: BlockName,
+    pub block_order: Vec<'a, BlockName>,
 }
 
 pub struct Program<'a> {

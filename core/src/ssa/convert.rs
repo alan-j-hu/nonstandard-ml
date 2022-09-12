@@ -14,7 +14,7 @@ pub fn compile<'cps, 'ssa, 'any>(
         fn_counter: 0,
         fns: BTreeMap::new(),
     };
-    let mut builder = FnBuilder::new(ret_addr);
+    let mut builder = FnBuilder::new(ret_addr, bump);
     let mut instrs = Vec::new_in(bump);
     let entry_block = builder.fresh_block();
     let terminator = convert(&mut ctx, bump, &mut builder, &mut instrs, exp)?;
@@ -23,13 +23,19 @@ pub fn compile<'cps, 'ssa, 'any>(
         instrs,
         terminator,
     };
+    builder.block_order.push(entry_block);
     let param = builder.fresh_register();
-    let FnBuilder { mut blocks, .. } = builder;
+    let FnBuilder {
+        mut blocks,
+        block_order,
+        ..
+    } = builder;
     blocks.insert(entry_block, block);
     let fun = Fn {
         param,
         blocks,
         entry: entry_block,
+        block_order,
     };
     let entry_fn = ctx.add_fn(fun);
     let Context { fns, .. } = ctx;
@@ -62,10 +68,11 @@ pub struct FnBuilder<'ssa> {
     regs: HashMap<Id, Register>,
     conts: HashMap<Id, BlockName>,
     blocks: BTreeMap<BlockName, Block<'ssa>>,
+    block_order: Vec<'ssa, BlockName>,
 }
 
 impl<'ssa> FnBuilder<'ssa> {
-    pub fn new(ret_addr: Id) -> Self {
+    pub fn new(ret_addr: Id, bump: &'ssa Bump) -> Self {
         Self {
             block_counter: 0,
             reg_counter: 0,
@@ -74,6 +81,7 @@ impl<'ssa> FnBuilder<'ssa> {
             regs: HashMap::new(),
             conts: HashMap::new(),
             blocks: BTreeMap::new(),
+            block_order: Vec::new_in(bump),
         }
     }
 
@@ -108,14 +116,16 @@ pub fn compile_fn<'cps, 'ssa, 'any>(
     lam: &'cps Lambda<'cps>,
 ) -> Result<(Fn<'ssa>, std::vec::Vec<Id>), Error<'any>> {
     let mut instrs = Vec::new_in(bump);
-    let mut builder = FnBuilder::new(lam.ret_addr);
+    let mut builder = FnBuilder::new(lam.ret_addr, bump);
     let param = builder.fresh_register();
     builder.regs.insert(lam.param, param);
     let entry = builder.fresh_block();
     let terminator = convert(ctx, bump, &mut builder, &mut instrs, lam.body)?;
+    builder.block_order.push(entry);
     let FnBuilder {
         free_vars,
         mut blocks,
+        block_order,
         ..
     } = builder;
     let entry_block = Block {
@@ -128,6 +138,7 @@ pub fn compile_fn<'cps, 'ssa, 'any>(
         param,
         blocks,
         entry,
+        block_order,
     };
     Ok((fun, free_vars))
 }
@@ -254,6 +265,7 @@ pub fn convert<'cps, 'ssa, 'any>(
                     terminator,
                 };
                 builder.blocks.insert(name, block);
+                builder.block_order.push(name);
             }
             convert(ctx, bump, builder, out, cont)
         }
