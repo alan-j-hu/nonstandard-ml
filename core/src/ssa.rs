@@ -27,6 +27,34 @@ pub enum Terminator<'a> {
     TailCall(Operand, Operand),
 }
 
+impl<'a> Terminator<'a> {
+    pub fn visit<'s, R, F>(&'s self, mut visit: F) -> R
+    where
+        F: for<'b> std::ops::FnMut(
+            &'b mut dyn Iterator<Item = BlockName>,
+            &'b mut dyn Iterator<Item = &'s Operand>,
+        ) -> R,
+    {
+        match self {
+            Terminator::CaseInt(ref a, ref cases, default) => visit(
+                &mut cases
+                    .iter()
+                    .map(|(_, b)| *b)
+                    .chain(std::iter::once(*default)),
+                &mut std::iter::once(a),
+            ),
+            Terminator::Continue(block, ref operands) => {
+                visit(&mut std::iter::once(*block), &mut operands.iter())
+            }
+            Terminator::Return(ref a) => visit(&mut std::iter::empty(), &mut std::iter::once(a)),
+            Terminator::TailCall(ref a, ref b) => visit(
+                &mut std::iter::empty(),
+                &mut std::iter::once(a).chain(std::iter::once(b)),
+            ),
+        }
+    }
+}
+
 pub enum Operand {
     Register(Register),
     Int(i64),
