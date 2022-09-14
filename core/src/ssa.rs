@@ -1,6 +1,6 @@
 use crate::stringpool::StringToken;
 use bumpalo::collections::Vec;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 mod convert;
 pub mod liveness;
@@ -15,7 +15,21 @@ pub struct BlockName(i32);
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FnName(i32);
 
-pub enum Instr<'a> {
+pub struct Instr<'a> {
+    pub op: Op<'a>,
+    pub killset: HashSet<Register>,
+}
+
+impl<'a> Instr<'a> {
+    pub fn new(op: Op<'a>) -> Self {
+        Self {
+            op,
+            killset: HashSet::new(),
+        }
+    }
+}
+
+pub enum Op<'a> {
     Apply(Register, Operand, Operand),
     Let(Def<'a>),
 }
@@ -75,6 +89,7 @@ pub struct Block<'a> {
     pub params: Vec<'a, Register>,
     pub instrs: Vec<'a, Instr<'a>>,
     pub terminator: Terminator<'a>,
+    pub killset: HashSet<Register>,
 }
 
 pub struct Fn<'a> {

@@ -40,8 +40,8 @@ fn test_pass(y: &str) {
     let (ret_addr, cexp) = cps::convert(&typed, &cps, &dec).unwrap();
     drop(typed);
     let ssa = Bump::new();
-    let program = ssa::compile(&ssa, ret_addr, &cexp).unwrap();
-    ssa::liveness::analyze_program(&program);
+    let mut program = ssa::compile(&ssa, ret_addr, &cexp).unwrap();
+    ssa::liveness::analyze(&mut program);
 }
 
 macro_rules! syntax_fail {

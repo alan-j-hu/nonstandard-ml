@@ -22,6 +22,7 @@ pub fn compile<'cps, 'ssa, 'any>(
         params: Vec::new_in(bump),
         instrs,
         terminator,
+        killset: HashSet::new(),
     };
     builder.block_order.push(entry_block);
     let param = builder.fresh_register();
@@ -132,6 +133,7 @@ pub fn compile_fn<'cps, 'ssa, 'any>(
         params: Vec::new_in(bump),
         instrs,
         terminator,
+        killset: HashSet::new(),
     };
     blocks.insert(entry, entry_block);
     let fun = Fn {
@@ -166,7 +168,7 @@ pub fn convert<'cps, 'ssa, 'any>(
                 Ok(Terminator::TailCall(f, x))
             } else {
                 let reg = builder.fresh_register();
-                out.push(Instr::Apply(reg, f, x));
+                out.push(Instr::new(Op::Apply(reg, f, x)));
                 let block = match builder.conts.get(cont) {
                     Some(block) => block,
                     None => panic!("a"),
@@ -239,7 +241,7 @@ pub fn convert<'cps, 'ssa, 'any>(
                     Expr::Closure(fn_name, env)
                 }
             };
-            out.push(Instr::Let(Def { register, expr }));
+            out.push(Instr::new(Op::Let(Def { register, expr })));
             builder.regs.insert(def.id, register);
             convert(ctx, bump, builder, out, cont)
         }
@@ -263,6 +265,7 @@ pub fn convert<'cps, 'ssa, 'any>(
                     params,
                     instrs,
                     terminator,
+                    killset: HashSet::new(),
                 };
                 builder.blocks.insert(name, block);
                 builder.block_order.push(name);

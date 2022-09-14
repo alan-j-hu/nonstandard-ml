@@ -1,8 +1,8 @@
-use super::{Block, BlockName, Expr, Fn, Instr, Operand, Program, Register, Terminator};
+use super::{Block, BlockName, Expr, Fn, Op, Operand, Program, Register};
 use std::collections::{HashMap, HashSet};
 
-pub fn analyze_program<'a>(program: &'a Program) {
-    for (_, ref fun) in &program.fns {
+pub fn analyze<'a>(program: &'a mut Program<'a>) {
+    for (_, fun) in &mut program.fns {
         let mut ctx = FnContext::new();
         ctx.visit_fn(fun);
     }
@@ -21,18 +21,24 @@ impl FnContext {
         }
     }
 
-    pub fn visit_fn<'a>(&mut self, fun: &'a Fn<'a>) {
+    pub fn visit_fn<'a>(&mut self, fun: &mut Fn<'a>) {
         for name in &fun.block_order {
-            let block = fun.blocks.get(name).unwrap();
+            let block = fun.blocks.get_mut(name).unwrap();
             self.visit_block(name, block);
         }
     }
 
-    fn visit_block<'a>(&mut self, name: &'a BlockName, block: &'a Block<'a>) {
-        fn visit_operand<'a>(live: &mut HashSet<Register>, operand: &'a Operand) {
+    fn visit_block<'a>(&mut self, name: &BlockName, block: &mut Block<'a>) {
+        fn visit_operand<'a>(
+            live: &mut HashSet<Register>,
+            killset: &mut HashSet<Register>,
+            operand: &'a Operand,
+        ) {
             match operand {
                 Operand::Register(reg) => {
-                    live.insert(*reg);
+                    if live.insert(*reg) {
+                        killset.insert(*reg);
+                    }
                 }
                 _ => {}
             }
@@ -51,38 +57,47 @@ impl FnContext {
                 }
             }
             for operand in operands {
-                visit_operand(&mut live, operand)
+                visit_operand(&mut live, &mut block.killset, operand)
             }
         });
 
-        for instr in block.instrs.iter().rev() {
-            match instr {
-                Instr::Apply(ref dest, ref a, ref b) => {
+        for instr in block.instrs.iter_mut().rev() {
+            match instr.op {
+                Op::Apply(ref dest, ref a, ref b) => {
                     if !live.remove(dest) {
                         self.unused_regs.insert(*dest);
                     }
-                    visit_operand(&mut live, a);
-                    visit_operand(&mut live, b);
+                    visit_operand(&mut live, &mut instr.killset, a);
+                    visit_operand(&mut live, &mut instr.killset, b);
                 }
-                Instr::Let(ref def) => {
+                Op::Let(ref def) => {
                     if !live.remove(&def.register) {
                         self.unused_regs.insert(def.register);
                     }
                     match def.expr {
                         Expr::Box(_, ref operands) => {
                             for operand in operands {
-                                visit_operand(&mut live, operand)
+                                visit_operand(&mut live, &mut instr.killset, operand)
                             }
                         }
                         Expr::Closure(_, ref captures) => {
                             for register in captures {
-                                live.insert(*register);
+                                if live.insert(*register) {
+                                    instr.killset.insert(*register);
+                                }
                             }
                         }
                     }
                 }
             }
         }
+
+        for register in &block.params {
+            if !live.remove(register) {
+                self.unused_regs.insert(*register);
+            }
+        }
+
         self.live.insert(*name, live);
     }
 }
