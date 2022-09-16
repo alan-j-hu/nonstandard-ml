@@ -86,7 +86,6 @@ pub struct Builder {
 impl Builder {
     fn fresh_var(&mut self) -> Var {
         let id = self.id;
-        println!("fresh {}", id);
         self.id = id + 1;
         Var {
             id,
