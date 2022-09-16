@@ -1,0 +1,5 @@
+val id = fn x => x end
+val n = id 0
+val s = id ""
+val f = id id
+val nested = id (id n)

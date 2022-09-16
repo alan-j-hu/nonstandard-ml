@@ -1,3 +1,4 @@
+use crate::elab::typ;
 use crate::stringpool::StringToken;
 use bumpalo::collections::Vec;
 use std::collections::BTreeMap;
@@ -30,13 +31,14 @@ pub struct ADef<'a> {
 }
 
 pub enum AExp<'a> {
-    Box(u64, Vec<'a, Val>),
+    Box(typ::Type, u64, Vec<'a, Val>),
     Lambda(Lambda<'a>),
 }
 
 pub struct AUse<'a>(&'a ADef<'a>);
 
 pub struct Lambda<'a> {
+    pub domain: typ::Type,
     pub param: Id,
     pub ret_addr: Id,
     pub body: &'a CExp<'a>,

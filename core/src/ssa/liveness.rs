@@ -75,7 +75,7 @@ impl FnContext {
                         self.unused_regs.insert(def.register);
                     }
                     match def.expr {
-                        Expr::Box(_, ref operands) => {
+                        Expr::Box(_, _, ref operands) => {
                             for operand in operands {
                                 visit_operand(&mut live, &mut instr.killset, operand)
                             }

@@ -78,3 +78,4 @@ run_pass!(curry1, "tests/pass/curry1.nml");
 run_pass!(curry2, "tests/pass/curry2.nml");
 run_pass!(twodecs, "tests/pass/twodecs.nml");
 run_pass!(decswildcard, "tests/pass/decswildcard.nml");
+run_pass!(generic, "tests/pass/generic.nml");

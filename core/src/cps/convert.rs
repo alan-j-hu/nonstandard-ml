@@ -29,7 +29,7 @@ pub fn convert<'cps, 'typed, 'any>(
             Ok(CExp::Let(
                 &*compiler.cps_bump.alloc(ADef {
                     id: box_id,
-                    exp: AExp::Box(0, vals),
+                    exp: AExp::Box(typ::Type::solved(typ::Expr::Integer), 0, vals),
                 }),
                 &*compiler.cps_bump.alloc(CExp::Continue(
                     ret_id,
@@ -213,35 +213,38 @@ impl<'cps, 'typed> Compiler<'typed, 'cps> {
                     clauses,
                     &(|exp| CExp::Continue(ret_addr, vec![in self.cps_bump; exp])),
                 )?;
-                let (body, ret_addr) = params.iter().rev().fold(
-                    (body, ret_addr),
-                    |(body, ret_addr), (param, _typ)| {
-                        let id = self.builder.fresh_id();
-                        let new_ret_addr = self.builder.fresh_id();
-                        (
-                            CExp::Let(
-                                self.cps_bump.alloc(ADef {
-                                    id,
-                                    exp: AExp::Lambda(Lambda {
-                                        param: *param,
-                                        ret_addr,
-                                        body: self.cps_bump.alloc(body),
+                let (body, ret_addr) =
+                    params
+                        .iter()
+                        .rev()
+                        .fold((body, ret_addr), |(body, ret_addr), (param, typ)| {
+                            let id = self.builder.fresh_id();
+                            let new_ret_addr = self.builder.fresh_id();
+                            (
+                                CExp::Let(
+                                    self.cps_bump.alloc(ADef {
+                                        id,
+                                        exp: AExp::Lambda(Lambda {
+                                            domain: typ.clone(),
+                                            param: *param,
+                                            ret_addr,
+                                            body: self.cps_bump.alloc(body),
+                                        }),
                                     }),
-                                }),
-                                self.cps_bump.alloc(CExp::Continue(
-                                    new_ret_addr,
-                                    vec![in self.cps_bump; Val::Id(id)],
-                                )),
-                            ),
-                            new_ret_addr,
-                        )
-                    },
-                );
+                                    self.cps_bump.alloc(CExp::Continue(
+                                        new_ret_addr,
+                                        vec![in self.cps_bump; Val::Id(id)],
+                                    )),
+                                ),
+                                new_ret_addr,
+                            )
+                        });
                 let id = self.builder.fresh_id();
                 Ok(CExp::Let(
                     self.cps_bump.alloc(ADef {
                         id,
                         exp: AExp::Lambda(Lambda {
+                            domain: dom.clone(),
                             param: first_param,
                             ret_addr,
                             body: self.cps_bump.alloc(body),

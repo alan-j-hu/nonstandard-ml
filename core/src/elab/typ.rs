@@ -150,7 +150,7 @@ impl Type {
         }
     }
 
-    fn solved(e: Expr<Type>) -> Type {
+    pub fn solved(e: Expr<Type>) -> Type {
         Type {
             inner: Rc::new(RefCell::new(State::Solved(e))),
         }

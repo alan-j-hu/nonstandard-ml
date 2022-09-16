@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use super::*;
 use crate::cps::{AExp, CExp, Id, Lambda, Val};
 use crate::diagnostic::Error;
+use crate::elab::typ;
 
 pub fn compile<'cps, 'ssa, 'any>(
     bump: &'ssa Bump,
@@ -33,6 +34,7 @@ pub fn compile<'cps, 'ssa, 'any>(
     } = builder;
     blocks.insert(entry_block, block);
     let fun = Fn {
+        domain: typ::Type::solved(typ::Expr::Integer),
         param,
         blocks,
         entry: entry_block,
@@ -137,6 +139,7 @@ pub fn compile_fn<'cps, 'ssa, 'any>(
     };
     blocks.insert(entry, entry_block);
     let fun = Fn {
+        domain: lam.domain.clone(),
         param,
         blocks,
         entry,
@@ -171,7 +174,7 @@ pub fn convert<'cps, 'ssa, 'any>(
                 out.push(Instr::new(Op::Apply(reg, f, x)));
                 let block = match builder.conts.get(cont) {
                     Some(block) => block,
-                    None => panic!("a"),
+                    None => return Err(Error::Internal(format!("Unknown cont {:?}", cont))),
                 };
                 Ok(Terminator::Continue(
                     *block,
@@ -186,13 +189,13 @@ pub fn convert<'cps, 'ssa, 'any>(
             for (num, cont) in cases {
                 let block = match builder.conts.get(cont) {
                     Some(block) => block,
-                    None => panic!("b"),
+                    None => return Err(Error::Internal(format!("Unknown cont {:?}", cont))),
                 };
                 jump_table.insert(*num, *block);
             }
             let default = match builder.conts.get(default) {
                 Some(block) => block,
-                None => panic!("c"),
+                None => return Err(Error::Internal(format!("Unknown cont {:?}", default))),
             };
             Ok(Terminator::CaseInt(scrut, jump_table, *default))
         }
@@ -221,12 +224,12 @@ pub fn convert<'cps, 'ssa, 'any>(
         CExp::Let(def, cont) => {
             let register = builder.fresh_register();
             let expr = match def.exp {
-                AExp::Box(tag, ref subterms) => {
+                AExp::Box(ref typ, tag, ref subterms) => {
                     let mut new_subterms = Vec::with_capacity_in(subterms.len(), bump);
                     for subterm in subterms {
                         new_subterms.push(convert_val(builder, subterm))
                     }
-                    Expr::Box(tag, new_subterms)
+                    Expr::Box(typ.clone(), tag, new_subterms)
                 }
                 AExp::Lambda(ref lam) => {
                     let (fun, free_vars) = compile_fn(ctx, bump, lam)?;
@@ -234,7 +237,7 @@ pub fn convert<'cps, 'ssa, 'any>(
                     let mut env = Vec::new_in(bump);
                     for id in free_vars {
                         match builder.regs.get(&id) {
-                            None => panic!("e"),
+                            None => return Err(Error::Internal(format!("Unknown reg {:?}", &id))),
                             Some(reg) => env.push(*reg),
                         }
                     }

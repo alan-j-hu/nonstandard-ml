@@ -1,3 +1,4 @@
+use crate::elab::typ;
 use crate::stringpool::StringToken;
 use bumpalo::collections::Vec;
 use std::collections::{BTreeMap, HashSet};
@@ -81,7 +82,7 @@ pub struct Def<'a> {
 }
 
 pub enum Expr<'a> {
-    Box(u64, Vec<'a, Operand>),
+    Box(typ::Type, u64, Vec<'a, Operand>),
     Closure(FnName, Vec<'a, Register>),
 }
 
@@ -93,6 +94,7 @@ pub struct Block<'a> {
 }
 
 pub struct Fn<'a> {
+    pub domain: typ::Type,
     pub param: Register,
     pub blocks: BTreeMap<BlockName, Block<'a>>,
     pub entry: BlockName,
