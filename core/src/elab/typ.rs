@@ -84,14 +84,19 @@ pub struct Builder {
 }
 
 impl Builder {
-    pub fn unsolved(&mut self) -> Type {
+    fn fresh_var(&mut self) -> Var {
         let id = self.id;
+        println!("fresh {}", id);
         self.id = id + 1;
-        Type::unsolved(Var {
+        Var {
             id,
             level: Level::Nat(self.level),
             rank: 0,
-        })
+        }
+    }
+
+    pub fn unsolved(&mut self) -> Type {
+        Type::unsolved(self.fresh_var())
     }
 
     pub fn solved(&self, e: Expr<Type>) -> Type {
@@ -106,35 +111,73 @@ impl Builder {
         self.level -= 1
     }
 
-    pub fn inst(&mut self, typ: &Type) -> Type {
-        match typ.find() {
-            Repr::Solved(Expr::Arrow(dom, codom)) => {
-                let dom = self.inst(&dom);
-                let codom = self.inst(&codom);
-                match (Rc::strong_count(&dom.inner), Rc::strong_count(&codom.inner)) {
-                    (1, _) | (_, 1) => self.solved(Expr::Arrow(dom, codom)),
-                    (_, _) => typ.clone(),
+    /// Performs the generalization operation of Hindley-Milner.
+    pub fn gen(&self, body: Type) -> Scheme {
+        fn go(this: &Builder, vars: &mut Vec<i32>, typ: &Type) {
+            match typ.find() {
+                Repr::Solved(Expr::Arrow(ref dom, ref codom)) => {
+                    go(this, vars, dom);
+                    go(this, vars, codom);
                 }
-            }
-            Repr::Solved(Expr::Integer) => typ.clone(),
-            Repr::Solved(Expr::Product(typs)) => {
-                let typs: Vec<_> = typs.iter().map(|typ| self.inst(typ)).collect();
-                for typ in &typs {
-                    if Rc::strong_count(&typ.inner) == 1 {
-                        return self.solved(Expr::Product(typs));
+                Repr::Solved(Expr::Integer) => {}
+                Repr::Solved(Expr::Product(ref typs)) => {
+                    for typ in typs {
+                        go(this, vars, typ);
                     }
                 }
-                typ.clone()
+                Repr::Solved(Expr::String) => {}
+                Repr::Unsolved(var) => {
+                    if var.level > Level::Nat(this.level) {
+                        for id in vars.iter() {
+                            if *id == var.id {
+                                return;
+                            }
+                        }
+                        vars.push(var.id);
+                    }
+                }
             }
-            Repr::Solved(Expr::String) => typ.clone(),
-            Repr::Unsolved(var) => {
-                if var.level > Level::Nat(self.level) {
-                    self.unsolved()
-                } else {
+        }
+        let mut vars = Vec::new();
+        go(self, &mut vars, &body);
+        Scheme { vars, body }
+    }
+
+    pub fn inst(&mut self, scheme: &Scheme) -> Type {
+        let subst = scheme.vars.iter().map(|v| (*v, self.unsolved())).collect();
+        fn go(this: &mut Builder, subst: &Vec<(i32, Type)>, typ: &Type) -> Type {
+            match typ.find() {
+                Repr::Solved(Expr::Arrow(dom, codom)) => {
+                    let dom = go(this, subst, &dom);
+                    let codom = go(this, subst, &codom);
+                    /*match (Rc::strong_count(&dom.inner), Rc::strong_count(&codom.inner)) {
+                        (1, _) | (_, 1) => this.solved(Expr::Arrow(dom, codom)),
+                        (_, _) => typ.clone(),
+                    }*/
+                    this.solved(Expr::Arrow(dom, codom))
+                }
+                Repr::Solved(Expr::Integer) => typ.clone(),
+                Repr::Solved(Expr::Product(typs)) => {
+                    let typs: Vec<_> = typs.iter().map(|typ| go(this, subst, typ)).collect();
+                    /*for typ in &typs {
+                        if Rc::strong_count(&typ.inner) == 1 {
+                            return this.solved(Expr::Product(typs));
+                        }
+                    }*/
+                    return this.solved(Expr::Product(typs));
+                }
+                Repr::Solved(Expr::String) => typ.clone(),
+                Repr::Unsolved(var) => {
+                    for (ref id, ref fresh) in subst {
+                        if *id == var.id {
+                            return fresh.clone();
+                        }
+                    }
                     typ.clone()
                 }
             }
         }
+        go(self, &subst, &scheme.body)
     }
 }
 
@@ -271,6 +314,12 @@ pub enum Expr<T> {
     Integer,
     Product(Vec<T>),
     String,
+}
+
+#[derive(Clone, Debug)]
+pub struct Scheme {
+    vars: Vec<i32>,
+    body: Type,
 }
 
 #[derive(Debug)]

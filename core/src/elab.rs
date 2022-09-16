@@ -54,16 +54,12 @@ impl Elaborator {
                 Ok((scope2, typed::Dec::And(bump.alloc(dec1), bump.alloc(dec2))))
             }
             ast::Dec::Loc(dec1, dec2) => {
-                self.typ_builder.push_level();
                 let (scope1, dec1) = self.elab_dec(bump, ctx, dec1)?;
-                self.typ_builder.pop_level();
                 let (scope2, dec2) = self.elab_dec(bump, &ctx.extend(&scope1), dec2)?;
                 Ok((scope2, typed::Dec::Loc(bump.alloc(dec1), bump.alloc(dec2))))
             }
             ast::Dec::Seq(dec1, dec2) => {
-                self.typ_builder.push_level();
                 let (scope1, dec1) = self.elab_dec(bump, ctx, dec1)?;
-                self.typ_builder.pop_level();
                 let (mut scope2, dec2) = self.elab_dec(bump, &ctx.extend(&scope1), dec2)?;
                 for (k, v) in scope1.vals.iter() {
                     match scope2.vals.entry(k) {
@@ -76,10 +72,16 @@ impl Elaborator {
                 Ok((scope2, typed::Dec::Seq(bump.alloc(dec1), bump.alloc(dec2))))
             }
             ast::Dec::Val(pat, exp) => {
+                self.typ_builder.push_level();
                 let mut vals = HashMap::new();
                 let typ = self.typ_builder.unsolved();
                 let pat = self.rename_pat(bump, &mut vals, pat, typ.clone())?;
                 let exp = self.elab_exp(bump, ctx, exp, typ.clone())?;
+                self.typ_builder.pop_level();
+                let vals = vals
+                    .iter()
+                    .map(|(k, (v, t))| (*k, (v.clone(), self.typ_builder.gen(t.clone()))))
+                    .collect();
                 Ok((
                     ctx::Scope { vals },
                     typed::Dec::Val(typ, bump.alloc(pat), bump.alloc(exp)),
@@ -107,8 +109,10 @@ impl Elaborator {
             }
             ast::Exp::Case(exp, cases) => {
                 let from = self.typ_builder.unsolved();
+                self.typ_builder.push_level();
                 let exp = self.elab_exp(bump, ctx, exp, from.clone())?;
                 let cases = self.elab_cases(bump, ctx, cases, &from, &vec![in bump], typ)?;
+                self.typ_builder.pop_level();
                 Ok(typed::Exp::Case(from, bump.alloc(exp), cases))
             }
             ast::Exp::Integer(n) => {
@@ -141,9 +145,7 @@ impl Elaborator {
             }
             ast::Exp::Let(dec, exp) => {
                 let (scope, dec) = self.elab_dec(bump, ctx, dec)?;
-                self.typ_builder.push_level();
                 let exp = self.elab_exp(bump, &ctx.extend(&scope), exp, typ)?;
-                self.typ_builder.pop_level();
                 Ok(typed::Exp::Let(bump.alloc(dec), bump.alloc(exp)))
             }
             ast::Exp::String(st) => {
@@ -179,6 +181,10 @@ impl Elaborator {
                     let pat = self.rename_pat(bump, &mut vals, &pat, typ.clone())?;
                     new_pats.push(pat);
                 }
+                let vals = vals
+                    .iter()
+                    .map(|(k, (v, t))| (*k, (v.clone(), self.typ_builder.gen(t.clone()))))
+                    .collect();
                 let rhs =
                     self.elab_exp(bump, &ctx.extend(&ctx::Scope { vals }), rhs, to.clone())?;
                 vec.push(typed::Case {

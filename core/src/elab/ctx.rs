@@ -23,7 +23,7 @@ impl<'a, 'ast, 'typed> Ctx<'a, 'ast, 'typed> {
 }
 
 pub struct Scope<'ast, 'typed> {
-    pub vals: HashMap<&'ast str, (typed::Var<'typed>, typ::Type)>,
+    pub vals: HashMap<&'ast str, (typed::Var<'typed>, typ::Scheme)>,
 }
 
 impl<'ast, 'typed> Scope<'ast, 'typed> {
