@@ -100,6 +100,13 @@ impl<'ssa> FnBuilder<'ssa> {
         }
     }
 
+    fn get_block<'any>(&self, id: &Id) -> Result<BlockName, Error<'any>> {
+        match self.conts.get(id) {
+            None => Err(Error::Internal(format!("Cont {:?} not found", id))),
+            Some(block) => Ok(*block),
+        }
+    }
+
     pub fn fresh_block(&mut self) -> BlockName {
         let id = self.block_counter;
         self.block_counter = id + 1;
@@ -172,33 +179,14 @@ pub fn convert<'cps, 'ssa, 'any>(
             } else {
                 let reg = builder.fresh_register();
                 out.push(Instr::new(Op::Apply(reg, f, x)));
-                let block = match builder.conts.get(cont) {
-                    Some(block) => block,
-                    None => return Err(Error::Internal(format!("Unknown cont {:?}", cont))),
-                };
+                let block = builder.get_block(&cont)?;
                 Ok(Terminator::Continue(
-                    *block,
+                    block,
                     vec![in bump; Operand::Register(reg)],
                 ))
             }
         }
         CExp::Case(_, _) => todo!(),
-        CExp::CaseInt(scrut, cases, default) => {
-            let scrut = convert_val(builder, scrut);
-            let mut jump_table = BTreeMap::new();
-            for (num, cont) in cases {
-                let block = match builder.conts.get(cont) {
-                    Some(block) => block,
-                    None => return Err(Error::Internal(format!("Unknown cont {:?}", cont))),
-                };
-                jump_table.insert(*num, *block);
-            }
-            let default = match builder.conts.get(default) {
-                Some(block) => block,
-                None => return Err(Error::Internal(format!("Unknown cont {:?}", default))),
-            };
-            Ok(Terminator::CaseInt(scrut, jump_table, *default))
-        }
         CExp::Continue(cont, args) if *cont == builder.ret_addr => {
             if args.len() == 1 {
                 let v = convert_val(builder, &args[0]);
@@ -211,15 +199,19 @@ pub fn convert<'cps, 'ssa, 'any>(
             }
         }
         CExp::Continue(cont, args) => {
-            let block = match builder.conts.get(cont) {
-                None => return Err(Error::Internal(format!("Cont {:?} not found", cont))),
-                Some(block) => *block,
-            };
+            let block = builder.get_block(&cont)?;
             let mut vals = Vec::new_in(bump);
-            for id in args {
-                vals.push(convert_val(builder, id))
+            for arg in args {
+                vals.push(convert_val(builder, arg))
             }
             Ok(Terminator::Continue(block, vals))
+        }
+        CExp::Lt(lhs, rhs, l, e) => {
+            let lhs = convert_val(builder, lhs);
+            let rhs = convert_val(builder, rhs);
+            let l = builder.get_block(&l)?;
+            let e = builder.get_block(&e)?;
+            Ok(Terminator::Lt(lhs, rhs, l, e))
         }
         CExp::Let(def, cont) => {
             let register = builder.fresh_register();

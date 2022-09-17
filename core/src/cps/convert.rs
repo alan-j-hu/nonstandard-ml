@@ -363,12 +363,45 @@ impl<'cps, 'typed> Compiler<'typed, 'cps> {
                             vec![in self.cps_bump],
                             &*self.cps_bump.alloc(body),
                         ));
+                        let vec: std::vec::Vec<_> = bmap.into_iter().collect();
+                        fn build_binary_search<'a, 'typed, 'cps>(
+                            this: &'a mut Compiler<'typed, 'cps>,
+                            scrut: Val,
+                            sorted: &'a [(i64, Id)],
+                        ) -> CExp<'cps> {
+                            match sorted {
+                                [] => panic!(),
+                                [(_, v)] => CExp::Continue(*v, vec![in this.cps_bump]),
+                                sorted => {
+                                    let middle = sorted.len() / 2;
+                                    let (k, _) = sorted[middle];
+                                    let l_id = this.builder.fresh_id();
+                                    let r_id = this.builder.fresh_id();
+                                    let left = &sorted[..middle];
+                                    let right = &sorted[middle..];
+                                    let l_body = build_binary_search(this, scrut, left);
+                                    let r_body = build_binary_search(this, scrut, right);
+                                    CExp::LetCont(
+                                        vec![in this.cps_bump;
+                                             (l_id, vec![in this.cps_bump], &*this.cps_bump.alloc(l_body)),
+                                             (r_id, vec![in this.cps_bump], &*this.cps_bump.alloc(r_body)),
+                                        ],
+                                        &*this.cps_bump.alloc(CExp::Lt(
+                                            scrut,
+                                            Val::Integer(k),
+                                            l_id,
+                                            r_id,
+                                        )),
+                                    )
+                                }
+                            }
+                        }
                         Ok(CExp::LetCont(
                             conts,
-                            self.cps_bump.alloc(CExp::CaseInt(
+                            self.cps_bump.alloc(build_binary_search(
+                                self,
                                 scruts[idx].0.clone(),
-                                bmap,
-                                default_id,
+                                &vec[..],
                             )),
                         ))
                     }

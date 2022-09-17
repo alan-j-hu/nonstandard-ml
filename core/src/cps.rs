@@ -12,8 +12,8 @@ pub struct Id(i32);
 pub enum CExp<'a> {
     Apply(Val, Val, Id),
     Case(Val, Vec<'a, ()>),
-    CaseInt(Val, BTreeMap<i64, Id>, Id),
     Continue(Id, Vec<'a, Val>),
+    Lt(Val, Val, Id, Id),
     Let(&'a ADef<'a>, &'a CExp<'a>),
     LetCont(Vec<'a, (Id, Vec<'a, Id>, &'a CExp<'a>)>, &'a CExp<'a>),
 }

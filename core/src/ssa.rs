@@ -36,8 +36,8 @@ pub enum Op<'a> {
 }
 
 pub enum Terminator<'a> {
-    CaseInt(Operand, BTreeMap<i64, BlockName>, BlockName),
     Continue(BlockName, Vec<'a, Operand>),
+    Lt(Operand, Operand, BlockName, BlockName),
     Return(Operand),
     TailCall(Operand, Operand),
 }
@@ -51,16 +51,13 @@ impl<'a> Terminator<'a> {
         ) -> R,
     {
         match self {
-            Terminator::CaseInt(ref a, ref cases, default) => visit(
-                &mut cases
-                    .iter()
-                    .map(|(_, b)| *b)
-                    .chain(std::iter::once(*default)),
-                &mut std::iter::once(a),
-            ),
             Terminator::Continue(block, ref operands) => {
                 visit(&mut std::iter::once(*block), &mut operands.iter())
             }
+            Terminator::Lt(ref lhs, ref rhs, l, e) => visit(
+                &mut std::iter::once(*l).chain(std::iter::once(*e)),
+                &mut std::iter::once(lhs).chain(std::iter::once(rhs)),
+            ),
             Terminator::Return(ref a) => visit(&mut std::iter::empty(), &mut std::iter::once(a)),
             Terminator::TailCall(ref a, ref b) => visit(
                 &mut std::iter::empty(),
