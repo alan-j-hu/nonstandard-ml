@@ -1,3 +1,5 @@
+pub mod convert;
+
 #[derive(Copy, Clone)]
 pub enum Cmp {
     Lt,
@@ -28,6 +30,7 @@ pub struct Block {
 
 pub enum Instr {
     Apply(StackMapIndex),
+    Box(LocalIndex),
     Break(BlockIndex),
     Cmp(Cmp, LocalIndex, LocalIndex, BlockIndex, BlockIndex),
     Load8(LocalIndex, u8),

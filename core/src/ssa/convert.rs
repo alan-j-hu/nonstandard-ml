@@ -18,7 +18,7 @@ pub fn compile<'cps, 'ssa, 'any>(
     let mut builder = FnBuilder::new(ret_addr, bump);
     let mut instrs = Vec::new_in(bump);
     let entry_block = builder.fresh_block();
-    let terminator = convert(&mut ctx, bump, &mut builder, &mut instrs, exp)?;
+    let terminator = builder.compile(&mut ctx, bump, &mut instrs, exp)?;
     let block = Block {
         params: Vec::new_in(bump),
         instrs,
@@ -118,6 +118,138 @@ impl<'ssa> FnBuilder<'ssa> {
         self.reg_counter = id + 1;
         Register(id)
     }
+
+    pub fn compile_val<'cps>(
+        &mut self,
+        out: &mut Vec<'ssa, Instr<'ssa>>,
+        val: &'cps Val,
+    ) -> Register {
+        match val {
+            Val::Integer(n) => {
+                let register = self.fresh_register();
+                out.push(Instr::new(Op::Let(Def {
+                    register,
+                    expr: Expr::Int(*n),
+                })));
+                register
+            }
+            Val::String(st) => {
+                let register = self.fresh_register();
+                out.push(Instr::new(Op::Let(Def {
+                    register,
+                    expr: Expr::String(*st),
+                })));
+                register
+            }
+            Val::Id(id) => self.get_reg(id),
+        }
+    }
+
+    pub fn compile<'cps, 'any>(
+        &mut self,
+        ctx: &mut Context<'ssa>,
+        bump: &'ssa Bump,
+        out: &mut Vec<'ssa, Instr<'ssa>>,
+        exp: &'cps CExp<'cps>,
+    ) -> Result<Terminator<'ssa>, Error<'any>> {
+        match exp {
+            CExp::Apply(f, x, cont) => {
+                let f = self.compile_val(out, f);
+                let x = self.compile_val(out, x);
+                if *cont == self.ret_addr {
+                    Ok(Terminator::TailCall(f, x))
+                } else {
+                    let reg = self.fresh_register();
+                    out.push(Instr::new(Op::Apply(reg, f, x, None)));
+                    let block = self.get_block(&cont)?;
+                    Ok(Terminator::Continue(block, vec![in bump; reg]))
+                }
+            }
+            CExp::Case(_, _) => todo!(),
+            CExp::Continue(cont, args) if *cont == self.ret_addr => {
+                if args.len() == 1 {
+                    let v = self.compile_val(out, &args[0]);
+                    Ok(Terminator::Return(v))
+                } else {
+                    Err(Error::Internal(format!(
+                        "Expected one cont arg, got {:?}",
+                        args.len()
+                    )))
+                }
+            }
+            CExp::Cmp(cmp, lhs, rhs, tru, fls) => {
+                let lhs = self.compile_val(out, lhs);
+                let rhs = self.compile_val(out, rhs);
+                let tru = self.get_block(&tru)?;
+                let fls = self.get_block(&fls)?;
+                Ok(Terminator::Cmp(*cmp, lhs, rhs, tru, fls))
+            }
+            CExp::Continue(cont, args) => {
+                let block = self.get_block(&cont)?;
+                let mut vals = Vec::new_in(bump);
+                for arg in args {
+                    vals.push(self.compile_val(out, arg))
+                }
+                Ok(Terminator::Continue(block, vals))
+            }
+            CExp::Let(def, cont) => {
+                let register = self.fresh_register();
+                let expr = match def.exp {
+                    AExp::Box(ref typ, tag, ref subterms) => {
+                        let mut new_subterms = Vec::with_capacity_in(subterms.len(), bump);
+                        for subterm in subterms {
+                            new_subterms.push(self.compile_val(out, subterm))
+                        }
+                        Expr::Box(typ.clone(), tag, new_subterms)
+                    }
+                    AExp::Lambda(ref lam) => {
+                        let (fun, free_vars) = compile_fn(ctx, bump, lam)?;
+                        let fn_name = ctx.add_fn(fun);
+                        let mut env = Vec::new_in(bump);
+                        for id in free_vars {
+                            match self.regs.get(&id) {
+                                None => {
+                                    return Err(Error::Internal(format!("Unknown reg {:?}", &id)))
+                                }
+                                Some(reg) => env.push(*reg),
+                            }
+                        }
+                        Expr::Closure(fn_name, env)
+                    }
+                };
+                out.push(Instr::new(Op::Let(Def { register, expr })));
+                self.regs.insert(def.id, register);
+                self.compile(ctx, bump, out, cont)
+            }
+            CExp::LetCont(def_conts, cont) => {
+                let mut block_names = std::vec::Vec::new();
+                for (name, params, body) in def_conts {
+                    let block_name = self.fresh_block();
+                    self.conts.insert(*name, block_name);
+                    block_names.push((block_name, params, body))
+                }
+                for (name, old_params, body) in block_names {
+                    let mut params = Vec::new_in(bump);
+                    for param in old_params {
+                        let reg = self.fresh_register();
+                        self.regs.insert(*param, reg);
+                        params.push(reg)
+                    }
+                    let mut instrs = Vec::new_in(bump);
+                    let terminator = self.compile(ctx, bump, &mut instrs, *body)?;
+                    let block = Block {
+                        params,
+                        instrs,
+                        terminator,
+                        killset: HashSet::new(),
+                    };
+                    self.blocks.insert(name, block);
+                    self.block_order.push(name);
+                }
+                self.compile(ctx, bump, out, cont)
+            }
+        }
+    }
 }
 
 pub fn compile_fn<'cps, 'ssa, 'any>(
@@ -130,7 +262,7 @@ pub fn compile_fn<'cps, 'ssa, 'any>(
     let param = builder.fresh_register();
     builder.regs.insert(lam.param, param);
     let entry = builder.fresh_block();
-    let terminator = convert(ctx, bump, &mut builder, &mut instrs, lam.body)?;
+    let terminator = builder.compile(ctx, bump, &mut instrs, lam.body)?;
     builder.block_order.push(entry);
     let FnBuilder {
         free_vars,
@@ -153,134 +285,4 @@ pub fn compile_fn<'cps, 'ssa, 'any>(
         block_order,
     };
     Ok((fun, free_vars))
-}
-
-pub fn convert_val<'cps, 'ssa>(
-    builder: &mut FnBuilder<'ssa>,
-    out: &mut Vec<'ssa, Instr<'ssa>>,
-    val: &'cps Val,
-) -> Register {
-    match val {
-        Val::Integer(n) => {
-            let register = builder.fresh_register();
-            out.push(Instr::new(Op::Let(Def {
-                register,
-                expr: Expr::Int(*n),
-            })));
-            register
-        }
-        Val::String(st) => {
-            let register = builder.fresh_register();
-            out.push(Instr::new(Op::Let(Def {
-                register,
-                expr: Expr::String(*st),
-            })));
-            register
-        }
-        Val::Id(id) => builder.get_reg(id),
-    }
-}
-
-pub fn convert<'cps, 'ssa, 'any>(
-    ctx: &mut Context<'ssa>,
-    bump: &'ssa Bump,
-    builder: &mut FnBuilder<'ssa>,
-    out: &mut Vec<'ssa, Instr<'ssa>>,
-    exp: &'cps CExp<'cps>,
-) -> Result<Terminator<'ssa>, Error<'any>> {
-    match exp {
-        CExp::Apply(f, x, cont) => {
-            let f = convert_val(builder, out, f);
-            let x = convert_val(builder, out, x);
-            if *cont == builder.ret_addr {
-                Ok(Terminator::TailCall(f, x))
-            } else {
-                let reg = builder.fresh_register();
-                out.push(Instr::new(Op::Apply(reg, f, x, None)));
-                let block = builder.get_block(&cont)?;
-                Ok(Terminator::Continue(block, vec![in bump; reg]))
-            }
-        }
-        CExp::Case(_, _) => todo!(),
-        CExp::Continue(cont, args) if *cont == builder.ret_addr => {
-            if args.len() == 1 {
-                let v = convert_val(builder, out, &args[0]);
-                Ok(Terminator::Return(v))
-            } else {
-                Err(Error::Internal(format!(
-                    "Expected one cont arg, got {:?}",
-                    args.len()
-                )))
-            }
-        }
-        CExp::Cmp(cmp, lhs, rhs, tru, fls) => {
-            let lhs = convert_val(builder, out, lhs);
-            let rhs = convert_val(builder, out, rhs);
-            let tru = builder.get_block(&tru)?;
-            let fls = builder.get_block(&fls)?;
-            Ok(Terminator::Cmp(*cmp, lhs, rhs, tru, fls))
-        }
-        CExp::Continue(cont, args) => {
-            let block = builder.get_block(&cont)?;
-            let mut vals = Vec::new_in(bump);
-            for arg in args {
-                vals.push(convert_val(builder, out, arg))
-            }
-            Ok(Terminator::Continue(block, vals))
-        }
-        CExp::Let(def, cont) => {
-            let register = builder.fresh_register();
-            let expr = match def.exp {
-                AExp::Box(ref typ, tag, ref subterms) => {
-                    let mut new_subterms = Vec::with_capacity_in(subterms.len(), bump);
-                    for subterm in subterms {
-                        new_subterms.push(convert_val(builder, out, subterm))
-                    }
-                    Expr::Box(typ.clone(), tag, new_subterms)
-                }
-                AExp::Lambda(ref lam) => {
-                    let (fun, free_vars) = compile_fn(ctx, bump, lam)?;
-                    let fn_name = ctx.add_fn(fun);
-                    let mut env = Vec::new_in(bump);
-                    for id in free_vars {
-                        match builder.regs.get(&id) {
-                            None => return Err(Error::Internal(format!("Unknown reg {:?}", &id))),
-                            Some(reg) => env.push(*reg),
-                        }
-                    }
-                    Expr::Closure(fn_name, env)
-                }
-            };
-            out.push(Instr::new(Op::Let(Def { register, expr })));
-            builder.regs.insert(def.id, register);
-            convert(ctx, bump, builder, out, cont)
-        }
-        CExp::LetCont(def_conts, cont) => {
-            let mut block_names = std::vec::Vec::new();
-            for (name, params, body) in def_conts {
-                let block_name = builder.fresh_block();
-                builder.conts.insert(*name, block_name);
-                block_names.push((block_name, params, body))
-            }
-            for (name, old_params, body) in block_names {
-                let mut params = Vec::new_in(bump);
-                for param in old_params {
-                    let reg = builder.fresh_register();
-                    builder.regs.insert(*param, reg);
-                    params.push(reg)
-                }
-                let mut instrs = Vec::new_in(bump);
-                let terminator = convert(ctx, bump, builder, &mut instrs, *body)?;
-                let block = Block {
-                    params,
-                    instrs,
-                    terminator,
-                    killset: HashSet::new(),
-                };
-                builder.blocks.insert(name, block);
-                builder.block_order.push(name);
-            }
-            convert(ctx, bump, builder, out, cont)
-        }
-    }
 }
