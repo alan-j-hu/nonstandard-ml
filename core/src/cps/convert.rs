@@ -336,7 +336,7 @@ impl<'cps, 'typed> Compiler<'typed, 'cps> {
                         }
                         let worklist = VecDeque::from_iter(matrix.iter().cloned());
                         let mut conts = vec![in self.cps_bump];
-                        let mut new_scruts = Vec::with_capacity_in(conts.len() - 1, self.cps_bump);
+                        let mut new_scruts = Vec::with_capacity_in(scruts.len() - 1, self.cps_bump);
                         for (i, scrut) in scruts.iter().enumerate() {
                             if i != idx {
                                 new_scruts.push(scrut.clone());
@@ -364,14 +364,48 @@ impl<'cps, 'typed> Compiler<'typed, 'cps> {
                             &*self.cps_bump.alloc(body),
                         ));
                         let vec: std::vec::Vec<_> = bmap.into_iter().collect();
+                        /*
+                        case n of
+                        | 1 => a
+                        | 3 => b
+                        | 5 => c
+                        | 7 => d
+                        | _ => e
+
+                        becomes
+
+                        if n < 5:
+                          if n < 3:
+                            if n == 1:
+                              a
+                            else:
+                              e
+                          else:
+                            if n == 3:
+                              b
+                            else:
+                              e
+                        else:
+                          if n < 7:
+                            if n == 5:
+                              c
+                            else:
+                              e
+                          else:
+                            if n == 7:
+                              d
+                            else:
+                              e
+                         */
                         fn build_binary_search<'a, 'typed, 'cps>(
                             this: &'a mut Compiler<'typed, 'cps>,
                             scrut: Val,
+                            default_id: Id,
                             sorted: &'a [(i64, Id)],
                         ) -> CExp<'cps> {
                             match sorted {
                                 [] => panic!(),
-                                [(_, v)] => CExp::Continue(*v, vec![in this.cps_bump]),
+                                [(k, v)] => CExp::Eq(scrut, Val::Integer(*k), *v, default_id),
                                 sorted => {
                                     let middle = sorted.len() / 2;
                                     let (k, _) = sorted[middle];
@@ -379,8 +413,9 @@ impl<'cps, 'typed> Compiler<'typed, 'cps> {
                                     let r_id = this.builder.fresh_id();
                                     let left = &sorted[..middle];
                                     let right = &sorted[middle..];
-                                    let l_body = build_binary_search(this, scrut, left);
-                                    let r_body = build_binary_search(this, scrut, right);
+                                    let l_body = build_binary_search(this, scrut, default_id, left);
+                                    let r_body =
+                                        build_binary_search(this, scrut, default_id, right);
                                     CExp::LetCont(
                                         vec![in this.cps_bump;
                                              (l_id, vec![in this.cps_bump], &*this.cps_bump.alloc(l_body)),
@@ -401,6 +436,7 @@ impl<'cps, 'typed> Compiler<'typed, 'cps> {
                             self.cps_bump.alloc(build_binary_search(
                                 self,
                                 scruts[idx].0.clone(),
+                                default_id,
                                 &vec[..],
                             )),
                         ))

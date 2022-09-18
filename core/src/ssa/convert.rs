@@ -206,12 +206,19 @@ pub fn convert<'cps, 'ssa, 'any>(
             }
             Ok(Terminator::Continue(block, vals))
         }
-        CExp::Lt(lhs, rhs, l, e) => {
+        CExp::Eq(lhs, rhs, eq, ne) => {
             let lhs = convert_val(builder, lhs);
             let rhs = convert_val(builder, rhs);
-            let l = builder.get_block(&l)?;
-            let e = builder.get_block(&e)?;
-            Ok(Terminator::Lt(lhs, rhs, l, e))
+            let eq = builder.get_block(&eq)?;
+            let ne = builder.get_block(&ne)?;
+            Ok(Terminator::Lt(lhs, rhs, eq, ne))
+        }
+        CExp::Lt(lhs, rhs, lt, ge) => {
+            let lhs = convert_val(builder, lhs);
+            let rhs = convert_val(builder, rhs);
+            let lt = builder.get_block(&lt)?;
+            let ge = builder.get_block(&ge)?;
+            Ok(Terminator::Lt(lhs, rhs, lt, ge))
         }
         CExp::Let(def, cont) => {
             let register = builder.fresh_register();

@@ -78,6 +78,7 @@ AtomExp: Exp<'a> = {
 Pat: Pat<'a> = {
     "_" => Pat::Wild,
     Id => Pat::Var(bump.alloc(<>)),
+    IntegerLit => Pat::Int(<>),
 }
 
 Pats: (Located<Pat<'a>>, Vec<'a, Located<Pat<'a>>>) = {

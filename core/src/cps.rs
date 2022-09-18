@@ -13,6 +13,7 @@ pub enum CExp<'a> {
     Apply(Val, Val, Id),
     Case(Val, Vec<'a, ()>),
     Continue(Id, Vec<'a, Val>),
+    Eq(Val, Val, Id, Id),
     Lt(Val, Val, Id, Id),
     Let(&'a ADef<'a>, &'a CExp<'a>),
     LetCont(Vec<'a, (Id, Vec<'a, Id>, &'a CExp<'a>)>, &'a CExp<'a>),

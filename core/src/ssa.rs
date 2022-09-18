@@ -37,6 +37,7 @@ pub enum Op<'a> {
 
 pub enum Terminator<'a> {
     Continue(BlockName, Vec<'a, Operand>),
+    Eq(Operand, Operand, BlockName, BlockName),
     Lt(Operand, Operand, BlockName, BlockName),
     Return(Operand),
     TailCall(Operand, Operand),
@@ -54,8 +55,12 @@ impl<'a> Terminator<'a> {
             Terminator::Continue(block, ref operands) => {
                 visit(&mut std::iter::once(*block), &mut operands.iter())
             }
-            Terminator::Lt(ref lhs, ref rhs, l, e) => visit(
-                &mut std::iter::once(*l).chain(std::iter::once(*e)),
+            Terminator::Eq(ref lhs, ref rhs, eq, ne) => visit(
+                &mut std::iter::once(*eq).chain(std::iter::once(*ne)),
+                &mut std::iter::once(lhs).chain(std::iter::once(rhs)),
+            ),
+            Terminator::Lt(ref lhs, ref rhs, lt, ge) => visit(
+                &mut std::iter::once(*lt).chain(std::iter::once(*ge)),
                 &mut std::iter::once(lhs).chain(std::iter::once(rhs)),
             ),
             Terminator::Return(ref a) => visit(&mut std::iter::empty(), &mut std::iter::once(a)),

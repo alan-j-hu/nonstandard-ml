@@ -219,6 +219,13 @@ impl Elaborator {
                     }
                 }
             }
+            ast::Pat::Int(n) => {
+                unify(self.typ_builder.solved(typ::Expr::Integer), typ)?;
+                Ok(typed::Pat {
+                    inner: typed::PatInner::Int(n),
+                    vars: vec![in bump],
+                })
+            }
             ast::Pat::Or(pat1, pat2) => {
                 let mut map = HashMap::new();
                 let pat1 = self.rename_pat(bump, &mut map, pat1, typ.clone())?;
@@ -302,6 +309,13 @@ impl Elaborator {
                     }
                     Entry::Vacant(_) => Err(Error::Internal("".to_string())),
                 }
+            }
+            ast::Pat::Int(n) => {
+                unify(self.typ_builder.solved(typ::Expr::Integer), typ)?;
+                Ok(typed::Pat {
+                    inner: typed::PatInner::Int(n),
+                    vars: vec![in bump],
+                })
             }
             ast::Pat::Or(pat1, pat2) => {
                 let mut map = names
