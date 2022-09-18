@@ -1,3 +1,4 @@
+use crate::bytecode::Cmp;
 use crate::elab::typ;
 use crate::stringpool::StringToken;
 use bumpalo::collections::Vec;
@@ -18,27 +19,23 @@ pub struct FnName(i32);
 
 pub struct Instr<'a> {
     pub op: Op<'a>,
-    pub killset: HashSet<Register>,
+    pub killset: Option<HashSet<Register>>,
 }
 
 impl<'a> Instr<'a> {
     pub fn new(op: Op<'a>) -> Self {
-        Self {
-            op,
-            killset: HashSet::new(),
-        }
+        Self { op, killset: None }
     }
 }
 
 pub enum Op<'a> {
-    Apply(Register, Operand, Operand),
+    Apply(Register, Operand, Operand, Option<HashSet<Register>>),
     Let(Def<'a>),
 }
 
 pub enum Terminator<'a> {
+    Cmp(Cmp, Operand, Operand, BlockName, BlockName),
     Continue(BlockName, Vec<'a, Operand>),
-    Eq(Operand, Operand, BlockName, BlockName),
-    Lt(Operand, Operand, BlockName, BlockName),
     Return(Operand),
     TailCall(Operand, Operand),
 }
@@ -52,17 +49,13 @@ impl<'a> Terminator<'a> {
         ) -> R,
     {
         match self {
-            Terminator::Continue(block, ref operands) => {
-                visit(&mut std::iter::once(*block), &mut operands.iter())
-            }
-            Terminator::Eq(ref lhs, ref rhs, eq, ne) => visit(
+            Terminator::Cmp(_, ref lhs, ref rhs, eq, ne) => visit(
                 &mut std::iter::once(*eq).chain(std::iter::once(*ne)),
                 &mut std::iter::once(lhs).chain(std::iter::once(rhs)),
             ),
-            Terminator::Lt(ref lhs, ref rhs, lt, ge) => visit(
-                &mut std::iter::once(*lt).chain(std::iter::once(*ge)),
-                &mut std::iter::once(lhs).chain(std::iter::once(rhs)),
-            ),
+            Terminator::Continue(block, ref operands) => {
+                visit(&mut std::iter::once(*block), &mut operands.iter())
+            }
             Terminator::Return(ref a) => visit(&mut std::iter::empty(), &mut std::iter::once(a)),
             Terminator::TailCall(ref a, ref b) => visit(
                 &mut std::iter::empty(),

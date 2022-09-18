@@ -1,4 +1,5 @@
 use super::*;
+use crate::bytecode::Cmp;
 use crate::diagnostic::Error;
 use crate::elab::{
     typ,
@@ -405,7 +406,9 @@ impl<'cps, 'typed> Compiler<'typed, 'cps> {
                         ) -> CExp<'cps> {
                             match sorted {
                                 [] => panic!(),
-                                [(k, v)] => CExp::Eq(scrut, Val::Integer(*k), *v, default_id),
+                                [(k, v)] => {
+                                    CExp::Cmp(Cmp::Eq, scrut, Val::Integer(*k), *v, default_id)
+                                }
                                 sorted => {
                                     let middle = sorted.len() / 2;
                                     let (k, _) = sorted[middle];
@@ -421,7 +424,8 @@ impl<'cps, 'typed> Compiler<'typed, 'cps> {
                                              (l_id, vec![in this.cps_bump], &*this.cps_bump.alloc(l_body)),
                                              (r_id, vec![in this.cps_bump], &*this.cps_bump.alloc(r_body)),
                                         ],
-                                        &*this.cps_bump.alloc(CExp::Lt(
+                                        &*this.cps_bump.alloc(CExp::Cmp(
+                                            Cmp::Le,
                                             scrut,
                                             Val::Integer(k),
                                             l_id,

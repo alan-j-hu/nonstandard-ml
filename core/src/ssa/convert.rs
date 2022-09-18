@@ -178,7 +178,7 @@ pub fn convert<'cps, 'ssa, 'any>(
                 Ok(Terminator::TailCall(f, x))
             } else {
                 let reg = builder.fresh_register();
-                out.push(Instr::new(Op::Apply(reg, f, x)));
+                out.push(Instr::new(Op::Apply(reg, f, x, None)));
                 let block = builder.get_block(&cont)?;
                 Ok(Terminator::Continue(
                     block,
@@ -198,6 +198,13 @@ pub fn convert<'cps, 'ssa, 'any>(
                 )))
             }
         }
+        CExp::Cmp(cmp, lhs, rhs, eq, ne) => {
+            let lhs = convert_val(builder, lhs);
+            let rhs = convert_val(builder, rhs);
+            let eq = builder.get_block(&eq)?;
+            let ne = builder.get_block(&ne)?;
+            Ok(Terminator::Cmp(*cmp, lhs, rhs, eq, ne))
+        }
         CExp::Continue(cont, args) => {
             let block = builder.get_block(&cont)?;
             let mut vals = Vec::new_in(bump);
@@ -205,20 +212,6 @@ pub fn convert<'cps, 'ssa, 'any>(
                 vals.push(convert_val(builder, arg))
             }
             Ok(Terminator::Continue(block, vals))
-        }
-        CExp::Eq(lhs, rhs, eq, ne) => {
-            let lhs = convert_val(builder, lhs);
-            let rhs = convert_val(builder, rhs);
-            let eq = builder.get_block(&eq)?;
-            let ne = builder.get_block(&ne)?;
-            Ok(Terminator::Lt(lhs, rhs, eq, ne))
-        }
-        CExp::Lt(lhs, rhs, lt, ge) => {
-            let lhs = convert_val(builder, lhs);
-            let rhs = convert_val(builder, rhs);
-            let lt = builder.get_block(&lt)?;
-            let ge = builder.get_block(&ge)?;
-            Ok(Terminator::Lt(lhs, rhs, lt, ge))
         }
         CExp::Let(def, cont) => {
             let register = builder.fresh_register();

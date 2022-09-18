@@ -62,13 +62,15 @@ impl FnContext {
         });
 
         for instr in block.instrs.iter_mut().rev() {
+            let mut killset = HashSet::new();
             match instr.op {
-                Op::Apply(ref dest, ref a, ref b) => {
+                Op::Apply(ref dest, ref a, ref b, ref mut roots) => {
                     if !live.remove(dest) {
                         self.unused_regs.insert(*dest);
                     }
-                    visit_operand(&mut live, &mut instr.killset, a);
-                    visit_operand(&mut live, &mut instr.killset, b);
+                    *roots = Some(live.clone());
+                    visit_operand(&mut live, &mut killset, a);
+                    visit_operand(&mut live, &mut killset, b);
                 }
                 Op::Let(ref def) => {
                     if !live.remove(&def.register) {
@@ -77,19 +79,20 @@ impl FnContext {
                     match def.expr {
                         Expr::Box(_, _, ref operands) => {
                             for operand in operands {
-                                visit_operand(&mut live, &mut instr.killset, operand)
+                                visit_operand(&mut live, &mut killset, operand)
                             }
                         }
                         Expr::Closure(_, ref captures) => {
                             for register in captures {
                                 if live.insert(*register) {
-                                    instr.killset.insert(*register);
+                                    killset.insert(*register);
                                 }
                             }
                         }
                     }
                 }
             }
+            instr.killset = Some(killset);
         }
 
         for register in &block.params {

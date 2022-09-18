@@ -26,6 +26,20 @@ fn test_typecheck_fail(y: &str) {
     assert!(elab::elab(&typed, &dec).is_err())
 }
 
+fn test_cps_fail(y: &str) {
+    let pool_bump = Bump::new();
+    let mut pool = StringPool::new(&pool_bump);
+    let program = fs::read_to_string(y).unwrap();
+    let lexer = lexer::Lexer::new_with_state(&program, lexer::State::new(&mut pool));
+    let bump = Bump::new();
+    let dec = syntax::parse(&bump, lexer).unwrap();
+    let typed = Bump::new();
+    let (_, dec) = elab::elab(&typed, &dec).unwrap();
+    drop(bump);
+    let cps = Bump::new();
+    assert!(cps::convert(&typed, &cps, &dec).is_err());
+}
+
 fn test_pass(y: &str) {
     let pool_bump = Bump::new();
     let mut pool = StringPool::new(&pool_bump);
@@ -62,6 +76,15 @@ macro_rules! typing_fail {
     };
 }
 
+macro_rules! cps_fail {
+    ($x:ident, $y:expr) => {
+        #[test]
+        fn $x() {
+            test_cps_fail($y)
+        }
+    };
+}
+
 macro_rules! run_pass {
     ($x:ident, $y:expr) => {
         #[test]
@@ -73,6 +96,7 @@ macro_rules! run_pass {
 
 syntax_fail!(fail1, "tests/syntax-fail/syn1.nml");
 typing_fail!(typ1, "tests/typing-fail/typ1.nml");
+cps_fail!(int_incomplete, "tests/cps-fail/int_incomplete.nml");
 run_pass!(pass1, "tests/pass/pass1.nml");
 run_pass!(curry1, "tests/pass/curry1.nml");
 run_pass!(curry2, "tests/pass/curry2.nml");

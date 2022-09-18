@@ -1,3 +1,4 @@
+pub mod bytecode;
 pub mod cps;
 pub mod diagnostic;
 pub mod elab;

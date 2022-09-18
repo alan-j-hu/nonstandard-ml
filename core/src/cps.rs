@@ -1,3 +1,4 @@
+use crate::bytecode::Cmp;
 use crate::elab::typ;
 use crate::stringpool::StringToken;
 use bumpalo::collections::Vec;
@@ -12,9 +13,8 @@ pub struct Id(i32);
 pub enum CExp<'a> {
     Apply(Val, Val, Id),
     Case(Val, Vec<'a, ()>),
+    Cmp(Cmp, Val, Val, Id, Id),
     Continue(Id, Vec<'a, Val>),
-    Eq(Val, Val, Id, Id),
-    Lt(Val, Val, Id, Id),
     Let(&'a ADef<'a>, &'a CExp<'a>),
     LetCont(Vec<'a, (Id, Vec<'a, Id>, &'a CExp<'a>)>, &'a CExp<'a>),
 }
