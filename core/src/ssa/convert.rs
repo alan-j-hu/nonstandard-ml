@@ -155,11 +155,29 @@ pub fn compile_fn<'cps, 'ssa, 'any>(
     Ok((fun, free_vars))
 }
 
-pub fn convert_val<'cps, 'ssa>(builder: &mut FnBuilder<'ssa>, val: &'cps Val) -> Operand {
+pub fn convert_val<'cps, 'ssa>(
+    builder: &mut FnBuilder<'ssa>,
+    out: &mut Vec<'ssa, Instr<'ssa>>,
+    val: &'cps Val,
+) -> Register {
     match val {
-        Val::Integer(n) => Operand::Int(*n),
-        Val::String(st) => Operand::String(*st),
-        Val::Id(id) => Operand::Register(builder.get_reg(id)),
+        Val::Integer(n) => {
+            let register = builder.fresh_register();
+            out.push(Instr::new(Op::Let(Def {
+                register,
+                expr: Expr::Int(*n),
+            })));
+            register
+        }
+        Val::String(st) => {
+            let register = builder.fresh_register();
+            out.push(Instr::new(Op::Let(Def {
+                register,
+                expr: Expr::String(*st),
+            })));
+            register
+        }
+        Val::Id(id) => builder.get_reg(id),
     }
 }
 
@@ -172,24 +190,21 @@ pub fn convert<'cps, 'ssa, 'any>(
 ) -> Result<Terminator<'ssa>, Error<'any>> {
     match exp {
         CExp::Apply(f, x, cont) => {
-            let f = convert_val(builder, f);
-            let x = convert_val(builder, x);
+            let f = convert_val(builder, out, f);
+            let x = convert_val(builder, out, x);
             if *cont == builder.ret_addr {
                 Ok(Terminator::TailCall(f, x))
             } else {
                 let reg = builder.fresh_register();
                 out.push(Instr::new(Op::Apply(reg, f, x, None)));
                 let block = builder.get_block(&cont)?;
-                Ok(Terminator::Continue(
-                    block,
-                    vec![in bump; Operand::Register(reg)],
-                ))
+                Ok(Terminator::Continue(block, vec![in bump; reg]))
             }
         }
         CExp::Case(_, _) => todo!(),
         CExp::Continue(cont, args) if *cont == builder.ret_addr => {
             if args.len() == 1 {
-                let v = convert_val(builder, &args[0]);
+                let v = convert_val(builder, out, &args[0]);
                 Ok(Terminator::Return(v))
             } else {
                 Err(Error::Internal(format!(
@@ -198,18 +213,18 @@ pub fn convert<'cps, 'ssa, 'any>(
                 )))
             }
         }
-        CExp::Cmp(cmp, lhs, rhs, eq, ne) => {
-            let lhs = convert_val(builder, lhs);
-            let rhs = convert_val(builder, rhs);
-            let eq = builder.get_block(&eq)?;
-            let ne = builder.get_block(&ne)?;
-            Ok(Terminator::Cmp(*cmp, lhs, rhs, eq, ne))
+        CExp::Cmp(cmp, lhs, rhs, tru, fls) => {
+            let lhs = convert_val(builder, out, lhs);
+            let rhs = convert_val(builder, out, rhs);
+            let tru = builder.get_block(&tru)?;
+            let fls = builder.get_block(&fls)?;
+            Ok(Terminator::Cmp(*cmp, lhs, rhs, tru, fls))
         }
         CExp::Continue(cont, args) => {
             let block = builder.get_block(&cont)?;
             let mut vals = Vec::new_in(bump);
             for arg in args {
-                vals.push(convert_val(builder, arg))
+                vals.push(convert_val(builder, out, arg))
             }
             Ok(Terminator::Continue(block, vals))
         }
@@ -219,7 +234,7 @@ pub fn convert<'cps, 'ssa, 'any>(
                 AExp::Box(ref typ, tag, ref subterms) => {
                     let mut new_subterms = Vec::with_capacity_in(subterms.len(), bump);
                     for subterm in subterms {
-                        new_subterms.push(convert_val(builder, subterm))
+                        new_subterms.push(convert_val(builder, out, subterm))
                     }
                     Expr::Box(typ.clone(), tag, new_subterms)
                 }

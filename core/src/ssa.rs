@@ -29,15 +29,15 @@ impl<'a> Instr<'a> {
 }
 
 pub enum Op<'a> {
-    Apply(Register, Operand, Operand, Option<HashSet<Register>>),
+    Apply(Register, Register, Register, Option<HashSet<Register>>),
     Let(Def<'a>),
 }
 
 pub enum Terminator<'a> {
-    Cmp(Cmp, Operand, Operand, BlockName, BlockName),
-    Continue(BlockName, Vec<'a, Operand>),
-    Return(Operand),
-    TailCall(Operand, Operand),
+    Cmp(Cmp, Register, Register, BlockName, BlockName),
+    Continue(BlockName, Vec<'a, Register>),
+    Return(Register),
+    TailCall(Register, Register),
 }
 
 impl<'a> Terminator<'a> {
@@ -45,12 +45,12 @@ impl<'a> Terminator<'a> {
     where
         F: for<'b> std::ops::FnMut(
             &'b mut dyn Iterator<Item = BlockName>,
-            &'b mut dyn Iterator<Item = &'s Operand>,
+            &'b mut dyn Iterator<Item = &'s Register>,
         ) -> R,
     {
         match self {
-            Terminator::Cmp(_, ref lhs, ref rhs, eq, ne) => visit(
-                &mut std::iter::once(*eq).chain(std::iter::once(*ne)),
+            Terminator::Cmp(_, ref lhs, ref rhs, tru, fls) => visit(
+                &mut std::iter::once(*tru).chain(std::iter::once(*fls)),
                 &mut std::iter::once(lhs).chain(std::iter::once(rhs)),
             ),
             Terminator::Continue(block, ref operands) => {
@@ -65,20 +65,16 @@ impl<'a> Terminator<'a> {
     }
 }
 
-pub enum Operand {
-    Register(Register),
-    Int(i64),
-    String(StringToken),
-}
-
 pub struct Def<'a> {
     pub register: Register,
     pub expr: Expr<'a>,
 }
 
 pub enum Expr<'a> {
-    Box(typ::Type, u64, Vec<'a, Operand>),
+    Box(typ::Type, u64, Vec<'a, Register>),
     Closure(FnName, Vec<'a, Register>),
+    Int(i64),
+    String(StringToken),
 }
 
 pub struct Block<'a> {

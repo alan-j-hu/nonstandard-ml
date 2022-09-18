@@ -2,7 +2,6 @@ use crate::bytecode::Cmp;
 use crate::elab::typ;
 use crate::stringpool::StringToken;
 use bumpalo::collections::Vec;
-use std::collections::BTreeMap;
 
 mod convert;
 pub use convert::convert;
