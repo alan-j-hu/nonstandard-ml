@@ -30,5 +30,5 @@ impl<'a> StringPool<'a> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct StringToken(i64);
