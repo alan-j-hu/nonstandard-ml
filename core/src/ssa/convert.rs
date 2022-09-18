@@ -127,18 +127,12 @@ impl<'ssa> FnBuilder<'ssa> {
         match val {
             Val::Integer(n) => {
                 let register = self.fresh_register();
-                out.push(Instr::new(Op::Let(Def {
-                    register,
-                    expr: Expr::Int(*n),
-                })));
+                out.push(Instr::new(Op::Int(register, *n)));
                 register
             }
             Val::String(st) => {
                 let register = self.fresh_register();
-                out.push(Instr::new(Op::Let(Def {
-                    register,
-                    expr: Expr::String(*st),
-                })));
+                out.push(Instr::new(Op::String(register, *st)));
                 register
             }
             Val::Id(id) => self.get_reg(id),
@@ -194,13 +188,18 @@ impl<'ssa> FnBuilder<'ssa> {
             }
             CExp::Let(def, cont) => {
                 let register = self.fresh_register();
-                let expr = match def.exp {
+                match def.exp {
                     AExp::Box(ref typ, tag, ref subterms) => {
                         let mut new_subterms = Vec::with_capacity_in(subterms.len(), bump);
                         for subterm in subterms {
                             new_subterms.push(self.compile_val(out, subterm))
                         }
-                        Expr::Box(typ.clone(), tag, new_subterms)
+                        out.push(Instr::new(Op::Box(
+                            register,
+                            typ.clone(),
+                            tag,
+                            new_subterms,
+                        )))
                     }
                     AExp::Lambda(ref lam) => {
                         let (fun, free_vars) = compile_fn(ctx, bump, lam)?;
@@ -214,10 +213,9 @@ impl<'ssa> FnBuilder<'ssa> {
                                 Some(reg) => env.push(*reg),
                             }
                         }
-                        Expr::Closure(fn_name, env)
+                        out.push(Instr::new(Op::Closure(register, fn_name, env)))
                     }
                 };
-                out.push(Instr::new(Op::Let(Def { register, expr })));
                 self.regs.insert(def.id, register);
                 self.compile(ctx, bump, out, cont)
             }

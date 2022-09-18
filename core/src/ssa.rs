@@ -28,11 +28,6 @@ impl<'a> Instr<'a> {
     }
 }
 
-pub enum Op<'a> {
-    Apply(Register, Register, Register, Option<HashSet<Register>>),
-    Let(Def<'a>),
-}
-
 pub enum Terminator<'a> {
     Cmp(Cmp, Register, Register, BlockName, BlockName),
     Continue(BlockName, Vec<'a, Register>),
@@ -41,40 +36,62 @@ pub enum Terminator<'a> {
 }
 
 impl<'a> Terminator<'a> {
-    pub fn visit<'s, R, F>(&'s self, mut visit: F) -> R
+    pub fn visit<R, F>(&self, mut visit: F) -> R
     where
         F: for<'b> std::ops::FnMut(
             &'b mut dyn Iterator<Item = BlockName>,
-            &'b mut dyn Iterator<Item = &'s Register>,
+            &'b mut dyn Iterator<Item = Register>,
         ) -> R,
     {
         match self {
             Terminator::Cmp(_, ref lhs, ref rhs, tru, fls) => visit(
                 &mut std::iter::once(*tru).chain(std::iter::once(*fls)),
-                &mut std::iter::once(lhs).chain(std::iter::once(rhs)),
+                &mut std::iter::once(*lhs).chain(std::iter::once(*rhs)),
             ),
             Terminator::Continue(block, ref operands) => {
-                visit(&mut std::iter::once(*block), &mut operands.iter())
+                visit(&mut std::iter::once(*block), &mut operands.iter().cloned())
             }
-            Terminator::Return(ref a) => visit(&mut std::iter::empty(), &mut std::iter::once(a)),
+            Terminator::Return(ref a) => visit(&mut std::iter::empty(), &mut std::iter::once(*a)),
             Terminator::TailCall(ref a, ref b) => visit(
                 &mut std::iter::empty(),
-                &mut std::iter::once(a).chain(std::iter::once(b)),
+                &mut std::iter::once(*a).chain(std::iter::once(*b)),
             ),
         }
     }
 }
 
-pub struct Def<'a> {
-    pub register: Register,
-    pub expr: Expr<'a>,
+pub enum Op<'a> {
+    Apply(Register, Register, Register, Option<HashSet<Register>>),
+    Box(Register, typ::Type, u64, Vec<'a, Register>),
+    Closure(Register, FnName, Vec<'a, Register>),
+    Int(Register, i64),
+    String(Register, StringToken),
 }
 
-pub enum Expr<'a> {
-    Box(typ::Type, u64, Vec<'a, Register>),
-    Closure(FnName, Vec<'a, Register>),
-    Int(i64),
-    String(StringToken),
+impl<'a> Op<'a> {
+    pub fn visit<R, F>(&self, mut visit: F) -> R
+    where
+        F: for<'b> std::ops::FnMut(
+            &'b mut dyn Iterator<Item = Register>,
+            &'b mut dyn Iterator<Item = Register>,
+        ) -> R,
+    {
+        match self {
+            Op::Apply(ref dest, ref f, ref x, _) => visit(
+                &mut std::iter::once(*dest),
+                &mut std::iter::once(*f).chain(std::iter::once(*x)),
+            ),
+            Op::Box(ref dest, _, _, ref args) => {
+                visit(&mut std::iter::once(*dest), &mut args.iter().cloned())
+            }
+            Op::Closure(ref dest, _, ref args) => {
+                visit(&mut std::iter::once(*dest), &mut args.iter().cloned())
+            }
+            Op::Int(ref r, _) | Op::String(ref r, _) => {
+                visit(&mut std::iter::once(*r), &mut std::iter::empty())
+            }
+        }
+    }
 }
 
 pub struct Block<'a> {

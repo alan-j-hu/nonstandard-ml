@@ -1,4 +1,4 @@
-use super::{Block, BlockName, Expr, Fn, Op, Program, Register};
+use super::{Block, BlockName, Fn, Program, Register};
 use std::collections::{HashMap, HashSet};
 
 pub fn analyze<'a>(program: &'a mut Program<'a>) {
@@ -32,10 +32,10 @@ impl FnContext {
         fn visit_register<'a>(
             live: &mut HashSet<Register>,
             killset: &mut HashSet<Register>,
-            reg: &'a Register,
+            reg: Register,
         ) {
-            if live.insert(*reg) {
-                killset.insert(*reg);
+            if live.insert(reg) {
+                killset.insert(reg);
             }
         }
 
@@ -58,36 +58,16 @@ impl FnContext {
 
         for instr in block.instrs.iter_mut().rev() {
             let mut killset = HashSet::new();
-            match instr.op {
-                Op::Apply(ref dest, ref a, ref b, ref mut roots) => {
-                    if !live.remove(dest) {
-                        self.unused_regs.insert(*dest);
-                    }
-                    *roots = Some(live.clone());
-                    visit_register(&mut live, &mut killset, a);
-                    visit_register(&mut live, &mut killset, b);
-                }
-                Op::Let(ref def) => {
-                    if !live.remove(&def.register) {
-                        self.unused_regs.insert(def.register);
-                    }
-                    match def.expr {
-                        Expr::Box(_, _, ref registers) => {
-                            for register in registers {
-                                visit_register(&mut live, &mut killset, register)
-                            }
-                        }
-                        Expr::Closure(_, ref captures) => {
-                            for register in captures {
-                                if live.insert(*register) {
-                                    killset.insert(*register);
-                                }
-                            }
-                        }
-                        Expr::Int(_) | Expr::String(_) => {}
+            instr.op.visit(|dests, args| {
+                for dest in dests {
+                    if !live.remove(&dest) {
+                        self.unused_regs.insert(dest);
                     }
                 }
-            }
+                for arg in args {
+                    visit_register(&mut live, &mut killset, arg);
+                }
+            });
             instr.killset = Some(killset);
         }
 
